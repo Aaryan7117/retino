@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+dist/
+build/
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+env/
+.env/
+backend/venv/
+backend/.venv/
+
+# ONNX / Model weights (large files)
+# Only keep retina_model.onnx in the frontend/public/models
+# If you have raw models in the root, ignore them
+/*.onnx
+/*.pth
+/*.h5
