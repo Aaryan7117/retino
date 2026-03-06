@@ -31,44 +31,30 @@ export const analyzeImage = async (imageFile, onProgress) => {
                     throw new Error('Image quality too low (blurry). Please retake the photo.');
                 }
 
-                // 4. Send to Web Worker for non-blocking inference
-                // Worker ensures heavy ONNX compute doesn't freeze the React UI
-                const worker = new Worker(new URL('./model.worker.js', import.meta.url), { type: 'module' });
+                // 4. Send to backend Python API for full inference including Grad-CAM
+                onProgress('Analyzing via AI model...');
 
-                worker.onmessage = (e) => {
-                    const { type, message, result, error, heatmapBlob } = e.data;
+                const formData = new FormData();
+                formData.append('file', imageFile);
 
-                    if (type === 'STATUS') {
-                        onProgress(message);
-                    } else if (type === 'RESULT') {
+                fetch('http://localhost:8000/inference/', {
+                    method: 'POST',
+                    body: formData,
+                })
+                    .then(res => {
+                        if (!res.ok) {
+                            return res.json().then(err => { throw new Error(err.detail || 'API Error'); });
+                        }
+                        return res.json();
+                    })
+                    .then(data => {
                         URL.revokeObjectURL(url);
-
-                        // Create object URL in main thread so it survives worker termination
-                        result.heatmap_url = URL.createObjectURL(heatmapBlob);
-
-                        worker.terminate();
-                        resolve(result);
-                    } else if (type === 'ERROR') {
+                        resolve(data);
+                    })
+                    .catch(err => {
                         URL.revokeObjectURL(url);
-                        worker.terminate();
-                        reject(new Error(error));
-                    }
-                };
-
-                worker.onerror = (err) => {
-                    URL.revokeObjectURL(url);
-                    worker.terminate();
-                    reject(new Error(`Worker error: ${err.message}`));
-                };
-
-                // Send the Float32Array and filename (for demo deterministic results)
-                worker.postMessage({
-                    type: 'INFERENCE',
-                    tensorData: tensorData,
-                    imageData: imageData, // Send imagedata so worker can draw heatmap
-                    filename: imageFile.name
-                }, [tensorData.buffer]); // Transfer buffer for speed
-
+                        reject(err);
+                    });
             } catch (err) {
                 URL.revokeObjectURL(url);
                 reject(err);

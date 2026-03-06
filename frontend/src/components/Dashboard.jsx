@@ -14,6 +14,8 @@ const FEATURES = [
 ];
 
 export default function Dashboard() {
+    const today = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
     return (
         <div className="space-y-8">
 
@@ -24,7 +26,7 @@ export default function Dashboard() {
                     <div>
                         <p className="section-label text-blue-300">Welcome Back</p>
                         <h1 className="text-4xl font-black text-white mt-1">Camp Dashboard</h1>
-                        <p className="text-blue-200 mt-2 text-sm">Wednesday, 4 March 2026 · Eye Camp Operations</p>
+                        <p className="text-blue-200 mt-2 text-sm">{today} · Eye Camp Operations</p>
                     </div>
                     <Link to="/scan" className="btn-primary px-6 py-3 text-base whitespace-nowrap self-start sm:self-auto">
                         + New Scan

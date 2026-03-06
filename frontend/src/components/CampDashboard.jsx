@@ -230,7 +230,7 @@ export default function CampDashboard() {
     /* Derived stats */
     const high = patients.filter(p => p.risk === 'HIGH').length;
     const medium = patients.filter(p => p.risk === 'MEDIUM').length;
-    const referrals = high + medium;
+    const referrals = patients.filter(p => p.referred).length;
     const today = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
     return (
@@ -340,12 +340,14 @@ export default function CampDashboard() {
                                     <p className="font-bold text-white max-w-sm">{viewPatient.urgency || riskClass(viewPatient.risk)}</p>
                                 </div>
                             </div>
-                            {viewPatient.heatmap_url && (
-                                <div className="bg-slate-800 rounded-xl p-4">
-                                    <p className="text-xs font-bold text-slate-400 uppercase mb-2">Grad-CAM Heatmap</p>
+                            <div className="bg-slate-800 rounded-xl p-4">
+                                <p className="text-xs font-bold text-slate-400 uppercase mb-2">Grad-CAM Heatmap</p>
+                                {viewPatient.heatmap_url ? (
                                     <img src={viewPatient.heatmap_url} alt="Heatmap" className="w-full max-h-48 object-contain rounded-lg border border-slate-700 bg-black" />
-                                </div>
-                            )}
+                                ) : (
+                                    <p className="text-sm text-slate-400 font-medium italic">Heatmap not available for this scan.</p>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>

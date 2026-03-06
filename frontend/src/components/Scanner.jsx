@@ -92,6 +92,9 @@ export default function Scanner() {
                 urgency: result.urgency || '',
                 timestamp: now.toISOString(),
                 heatmap_url: result.heatmap_url || null,
+                confirmed: false,
+                referred: false,
+                followUpRequired: false
             };
 
             try {
@@ -129,7 +132,7 @@ export default function Scanner() {
                     </svg>
                     {/* Tooltip */}
                     <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 w-64 p-3 bg-slate-800 text-slate-300 text-xs rounded-xl border border-slate-700 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-2xl">
-                        Must be a valid retinal fundus photograph: a circular image of the back of the eye with characteristic dark borders.
+                        Fundus image = circular eye scan with dark borders and visible retinal vessels.
                     </div>
                 </div>
                 <div

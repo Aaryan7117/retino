@@ -1,63 +1,89 @@
 /**
  * Heuristic validation to check if an uploaded image is a valid fundus photograph.
- * Checks for the characteristic dark padding corners and biological center variance.
- * @throws {Error} If the image fails the validation heuristics.
+ *
+ * Runs BEFORE ONNX inference and rejects obvious non-eye content such as
+ * certificates, documents, or selfies.
+ *
+ * Implementation follows the requested three-step validator:
+ *  1) Corner brightness check
+ *  2) Center texture / variance check
+ *  3) Soft circularity heuristic (center vs corner brightness)
+ *
+ * Throws an Error with a user-facing message if the image fails validation.
  */
 export const validateFundusImage = (imageData) => {
     const { width, height, data } = imageData;
 
+    // Helper: compute mean brightness (0–255) and variance for a rectangular region
     const getRegionStats = (startX, startY, w, h) => {
-        let sumIntensity = 0;
-        let sumSquaredIntensity = 0;
+        let sum = 0;
+        let sumSq = 0;
         let count = 0;
 
-        for (let y = Math.floor(startY); y < startY + h; y++) {
-            for (let x = Math.floor(startX); x < startX + w; x++) {
-                if (x >= 0 && x < width && y >= 0 && y < height) {
-                    const idx = (y * width + x) * 4;
-                    const r = data[idx];
-                    const g = data[idx + 1];
-                    const b = data[idx + 2];
+        const x0 = Math.max(0, Math.floor(startX));
+        const y0 = Math.max(0, Math.floor(startY));
+        const x1 = Math.min(width, Math.floor(startX + w));
+        const y1 = Math.min(height, Math.floor(startY + h));
 
-                    // Standard relative luminance (perceptual brightness, 0.0 to 1.0)
-                    const intensity = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0;
-
-                    sumIntensity += intensity;
-                    sumSquaredIntensity += intensity * intensity;
-                    count++;
-                }
+        for (let y = y0; y < y1; y++) {
+            for (let x = x0; x < x1; x++) {
+                const idx = (y * width + x) * 4;
+                const r = data[idx];
+                const g = data[idx + 1];
+                const b = data[idx + 2];
+                const brightness = (r + g + b) / 3; // 0–255
+                sum += brightness;
+                sumSq += brightness * brightness;
+                count++;
             }
         }
 
-        const mean = sumIntensity / count;
-        // Variance formula: E[X^2] - (E[X])^2
-        const variance = (sumSquaredIntensity / count) - (mean * mean);
+        if (!count) {
+            return { mean: 0, variance: 0 };
+        }
+
+        const mean = sum / count;
+        const variance = sumSq / count - mean * mean;
         return { mean, variance };
     };
 
-    // 1. Check Corner Dark Masks (Fundus images are circular)
-    const cornerSize = 40; // 40x40 corners on a 224x224 image
+    // ── STEP 1: Corner Brightness Check ────────────────────────────────
+    const cornerSize = 20;
     const tl = getRegionStats(0, 0, cornerSize, cornerSize).mean;
     const tr = getRegionStats(width - cornerSize, 0, cornerSize, cornerSize).mean;
     const bl = getRegionStats(0, height - cornerSize, cornerSize, cornerSize).mean;
     const br = getRegionStats(width - cornerSize, height - cornerSize, cornerSize, cornerSize).mean;
 
-    // A certificate or normal photo will likely have bright corners or varied corners.
-    // Fundus images usually have pitch black corners.
-    const avgCornerBrightness = (tl + tr + bl + br) / 4;
+    const corners = [tl, tr, bl, br];
+    const maxBrightness = 255;
+    const darkThreshold = 0.4 * maxBrightness; // 40% of max
+    const darkCorners = corners.filter((c) => c < darkThreshold).length;
 
-    if (avgCornerBrightness > 0.3) {
-        throw new Error("Invalid Image: Please upload a retinal fundus photograph (eye image from fundus camera)");
-    }
+    const centerSize = 50;
+    const centerX = (width - centerSize) / 2;
+    const centerY = (height - centerSize) / 2;
+    const centerStats = getRegionStats(centerX, centerY, centerSize, centerSize);
 
-    // 2. Check Center Variance (biological structure vs solid color)
-    const centerSize = 100;
-    const cx = (width - centerSize) / 2;
-    const cy = (height - centerSize) / 2;
-    const centerStats = getRegionStats(cx, cy, centerSize, centerSize);
+    // ── STEP 2: Center Variation Check ─────────────────────────────────
+    const lowVarianceThreshold = 30; // almost flat / document-like
+    const veryBrightThreshold = 0.9 * maxBrightness; // > 90% brightness
 
-    if (centerStats.variance < 0.001) {
-        throw new Error("Invalid Image: Please upload a retinal fundus photograph (eye image from fundus camera)");
+    const failsTexture =
+        centerStats.variance < lowVarianceThreshold ||
+        (centerStats.mean > veryBrightThreshold && centerStats.variance < lowVarianceThreshold);
+
+    // ── STEP 3: Circularity Heuristic (Soft) ──────────────────────────
+    const avgCornerBrightness = corners.reduce((a, b) => a + b, 0) / corners.length;
+    const cornerBrightThreshold = 0.7 * maxBrightness;
+    const smallDifference = 20; // brightness difference tolerance
+
+    const failsCircularity =
+        avgCornerBrightness > cornerBrightThreshold &&
+        Math.abs(centerStats.mean - avgCornerBrightness) < smallDifference;
+
+    // Decision logic
+    if (darkCorners < 3 || failsTexture || failsCircularity) {
+        throw new Error('Invalid Image: Please upload a retinal fundus photograph (eye image from fundus camera).');
     }
 
     return true;

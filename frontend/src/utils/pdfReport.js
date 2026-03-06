@@ -18,11 +18,11 @@ const GRADE_LABELS = [
     'Proliferative Diabetic Retinopathy',
 ];
 const URGENCY_LABELS = [
-    'Annual checkup recommended',
-    'Monitor closely — 6 months',
-    'Refer to specialist within 3 months',
-    'Urgent referral — within 2 weeks',
-    'Emergency referral — Immediate',
+    'Routine screening in 12 months',
+    'Follow-up in 6 months',
+    'Refer within 3 months',
+    'Urgent referral',
+    'Emergency referral',
 ];
 const RISK_LABELS = ['LOW', 'LOW', 'MEDIUM', 'HIGH', 'HIGH'];
 
@@ -285,8 +285,8 @@ function addFollowUpTable(pdf, currentGrade, startY) {
     const ROW_H = 7;
 
     const rows = [
-        ['Grade 0', 'Routine monitoring', '12 months'],
-        ['Grade 1', 'Close observation', '6 months'],
+        ['Grade 0', 'Routine screening', '12 months'],
+        ['Grade 1', 'Follow-up', '6 months'],
         ['Grade 2', 'Refer to specialist', 'Within 3 months'],
         ['Grade 3', 'Urgent referral', 'Within 2 weeks'],
         ['Grade 4', 'Emergency referral', 'Immediate'],

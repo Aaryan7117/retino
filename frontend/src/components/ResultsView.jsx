@@ -6,10 +6,10 @@ import ABDMIntegration from './ABDMIntegration';
 import { savePatient } from '../utils/indexedDB';
 
 const GRADE_INFO = [
-    { label: 'No Diabetic Retinopathy', cls: 'grade-0', urgency: 'Annual checkup', accent: 'border-l-emerald-500' },
-    { label: 'Mild Diabetic Retinopathy', cls: 'grade-1', urgency: 'Monitor in 6 months', accent: 'border-l-yellow-500' },
-    { label: 'Moderate Diabetic Retinopathy', cls: 'grade-2', urgency: 'Refer in 3 months', accent: 'border-l-orange-500' },
-    { label: 'Severe Diabetic Retinopathy', cls: 'grade-3', urgency: 'Refer within 2 weeks', accent: 'border-l-red-500' },
+    { label: 'No Diabetic Retinopathy', cls: 'grade-0', urgency: 'Routine screening in 12 months', accent: 'border-l-emerald-500' },
+    { label: 'Mild Diabetic Retinopathy', cls: 'grade-1', urgency: 'Follow-up in 6 months', accent: 'border-l-yellow-500' },
+    { label: 'Moderate Diabetic Retinopathy', cls: 'grade-2', urgency: 'Refer within 3 months', accent: 'border-l-orange-500' },
+    { label: 'Severe Diabetic Retinopathy', cls: 'grade-3', urgency: 'Urgent referral', accent: 'border-l-red-500' },
     { label: 'Proliferative Diabetic Retinopathy', cls: 'grade-4', urgency: '🚨 Emergency referral', accent: 'border-l-pink-500' },
 ];
 
@@ -160,6 +160,9 @@ export default function ResultsView() {
                                         urgency: result.urgency || '',
                                         timestamp: new Date().toISOString(),
                                         heatmap_url: result.heatmap_url || null,
+                                        confirmed: true,
+                                        referred: result.grade >= 3,
+                                        followUpRequired: result.grade === 2,
                                     });
                                 } catch { /* already saved by Scanner */ }
                                 sessionStorage.removeItem('retinascan_patient_draft');
