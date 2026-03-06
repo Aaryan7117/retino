@@ -54,7 +54,11 @@ function UpdateToast({ wb, onDismiss }) {
 // ─── PWA install prompt button ─────────────────────────────────────────────────
 function InstallButton() {
   const [prompt, setPrompt] = useState(null);
-  const [installed, setInstalled] = useState(false);
+  const [installed, setInstalled] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia
+      ? window.matchMedia('(display-mode: standalone)').matches
+      : false,
+  );
 
   useEffect(() => {
     const handler = (e) => {
@@ -62,11 +66,6 @@ function InstallButton() {
       setPrompt(e);
     };
     window.addEventListener('beforeinstallprompt', handler);
-
-    // Hide button if already installed (standalone mode)
-    if (window.matchMedia('(display-mode: standalone)').matches) {
-      setInstalled(true);
-    }
 
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);

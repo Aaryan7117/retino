@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { SUPPORTED_LANGUAGES, generateScript, speakText, stopSpeaking, pauseSpeaking, resumeSpeaking } from '../utils/voiceAssistant';
 
 export default function VoiceGuide({ patient, result }) {
@@ -19,11 +19,19 @@ export default function VoiceGuide({ patient, result }) {
 
     // Update transcript when language changes
     useEffect(() => {
-        setTranscript(textToSpeak);
-        stopSpeaking();
-        setIsPlaying(false);
-        setIsPaused(false);
-        setWordIndex(0);
+        // Defer state updates to avoid synchronous setState in effect body
+        let cancelled = false;
+        queueMicrotask(() => {
+            if (cancelled) return;
+            setTranscript(textToSpeak);
+            stopSpeaking();
+            setIsPlaying(false);
+            setIsPaused(false);
+            setWordIndex(0);
+        });
+        return () => {
+            cancelled = true;
+        };
     }, [language, textToSpeak]);
 
     const handlePlay = () => {

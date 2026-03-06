@@ -11,6 +11,10 @@ export default defineConfig({
       filename: 'service-worker.js',
       registerType: 'autoUpdate',
       injectRegister: false,          // We handle registration manually
+      injectManifest: {
+        // Allow large ONNX / WASM assets without failing the build
+        maximumFileSizeToCacheInBytes: 30 * 1024 * 1024,
+      },
       manifest: {
         name: 'RetinaScan AI',
         short_name: 'RetinaScan',

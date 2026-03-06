@@ -60,15 +60,17 @@ function DonutChart({ patients }) {
     const total = patients.length || 1;
     const counts = GRADE_COLORS.map((_, g) => patients.filter(p => p.grade === g).length);
 
-    // Build segments: each gets a dasharray/dashoffset slice
-    let offset = 0;
-    const segments = counts.map((count, i) => {
-        const pct = count / total;
-        const dash = pct * CIRC;
-        const seg = { i, count, dash, offset, pct };
-        offset += dash;
-        return seg;
-    });
+    // Build segments: each gets a dasharray/dashoffset slice without mutating after render
+    const { segments } = counts.reduce(
+        (acc, count, i) => {
+            const pct = count / total;
+            const dash = pct * CIRC;
+            acc.segments.push({ i, count, dash, offset: acc.offset, pct });
+            acc.offset += dash;
+            return acc;
+        },
+        { offset: 0, segments: [] },
+    );
 
     return (
         <div className="flex flex-col sm:flex-row items-center gap-8">

@@ -124,16 +124,22 @@ function addClinicalSummary(pdf, grade, confidence, riskScore) {
     pdf.setTextColor(r, g, b);
     pdf.text(`Risk Level: ${risk}`, PAGE_W / 2, y + 13, { align: 'center' });
 
-    // Grade label
+    // Grade label + confidence
     setTextColor(pdf, '#333333');
     pdf.setFontSize(9);
     pdf.setFont('helvetica', 'normal');
     pdf.text(`AI Grade: ${GRADE_LABELS[grade]}  |  Confidence: ${Math.round(confidence * 100)}%`, PAGE_W / 2, y + 20, { align: 'center' });
 
+    // Risk score + urgency
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(9);
+    setTextColor(pdf, '#333333');
+    pdf.text(`Risk Score: ${riskScore} / 100`, PAGE_W / 2, y + 25, { align: 'center' });
+
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(10);
     pdf.setTextColor(r, g, b);
-    pdf.text(`Urgency: ${URGENCY_LABELS[grade]}`, PAGE_W / 2, y + 27, { align: 'center' });
+    pdf.text(`Urgency: ${URGENCY_LABELS[grade]}`, PAGE_W / 2, y + 30, { align: 'center' });
 }
 
 /* ──────────────────────────────────────────────
