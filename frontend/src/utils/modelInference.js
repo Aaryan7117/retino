@@ -1,4 +1,5 @@
 import { preprocessImageForONNX, validateFundusImage } from './imagePreprocessing';
+import { API_BASE_URL } from './apiConfig';
 
 /**
  * Main wrapper to run offline AI inference via a Web Worker.
@@ -37,7 +38,7 @@ export const analyzeImage = async (imageFile, onProgress) => {
                 const formData = new FormData();
                 formData.append('file', imageFile);
 
-                fetch('http://localhost:8000/inference/', {
+                fetch(`${API_BASE_URL}/inference/`, {
                     method: 'POST',
                     body: formData,
                 })

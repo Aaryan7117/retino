@@ -51,53 +51,7 @@ function UpdateToast({ wb, onDismiss }) {
   );
 }
 
-// ─── PWA install prompt button ─────────────────────────────────────────────────
-function InstallButton() {
-  const [prompt, setPrompt] = useState(null);
-  const [installed, setInstalled] = useState(() =>
-    typeof window !== 'undefined' && window.matchMedia
-      ? window.matchMedia('(display-mode: standalone)').matches
-      : false,
-  );
 
-  useEffect(() => {
-    const handler = (e) => {
-      e.preventDefault();
-      setPrompt(e);
-    };
-    window.addEventListener('beforeinstallprompt', handler);
-
-    return () => window.removeEventListener('beforeinstallprompt', handler);
-  }, []);
-
-  const handleInstall = async () => {
-    if (!prompt) return;
-    prompt.prompt();
-    const { outcome } = await prompt.userChoice;
-    if (outcome === 'accepted') {
-      setInstalled(true);
-      setPrompt(null);
-    }
-  };
-
-  if (installed || !prompt) return null;
-
-  return (
-    <button
-      id="install-btn"
-      onClick={handleInstall}
-      title="Install RetinaScan AI as an app"
-      className="hidden sm:flex items-center gap-1.5 text-xs font-bold px-3 py-1.5
-                 rounded-full border border-blue-600 bg-blue-900/40 text-blue-300
-                 hover:bg-blue-800/60 hover:text-white transition-all duration-150 shrink-0"
-    >
-      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-      </svg>
-      Install App
-    </button>
-  );
-}
 
 const NAV = [
   { to: '/', label: 'Dashboard' },
@@ -176,7 +130,6 @@ export default function App() {
             <div className="flex items-center gap-2 shrink-0">
               {/* Desktop Install + Status */}
               <div className="hidden md:flex items-center gap-2">
-                <InstallButton />
                 <OfflineIndicator />
               </div>
 
@@ -211,9 +164,8 @@ export default function App() {
 
           {/* Mobile nav drawer */}
           <div
-            className={`md:hidden border-t border-slate-800 bg-slate-950/98 backdrop-blur-sm overflow-hidden transition-[max-height,opacity,transform] duration-200 ${
-              mobileNavOpen ? 'max-h-80 opacity-100 translate-y-0' : 'max-h-0 opacity-0 -translate-y-1'
-            }`}
+            className={`md:hidden border-t border-slate-800 bg-slate-950/98 backdrop-blur-sm overflow-hidden transition-[max-height,opacity,transform] duration-200 ${mobileNavOpen ? 'max-h-80 opacity-100 translate-y-0' : 'max-h-0 opacity-0 -translate-y-1'
+              }`}
           >
             <div className="px-4 py-3 space-y-3">
               <nav className="flex flex-col gap-1">
@@ -229,10 +181,9 @@ export default function App() {
                       setMobileNavOpen(false);
                     }}
                     className={({ isActive }) =>
-                      `px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center justify-between ${
-                        isActive
-                          ? 'bg-blue-600 text-white shadow-md shadow-blue-900/50'
-                          : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                      `px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center justify-between ${isActive
+                        ? 'bg-blue-600 text-white shadow-md shadow-blue-900/50'
+                        : 'text-slate-300 hover:text-white hover:bg-slate-800'
                       }`
                     }
                   >
@@ -242,7 +193,6 @@ export default function App() {
               </nav>
 
               <div className="flex items-center justify-between gap-3 pt-2 border-t border-slate-800">
-                <InstallButton />
                 {/* Connection status is already rendered above; keep this layout light */}
               </div>
             </div>

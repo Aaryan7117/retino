@@ -11,6 +11,7 @@
  *  - Falls back to local mock if backend is unreachable
  */
 import { useState } from 'react';
+import { API_BASE_URL } from '../utils/apiConfig';
 
 /* ── ABHA auto-formatter ────────────────────────────────── */
 function formatAbha(val) {
@@ -57,7 +58,7 @@ export default function ABDMIntegration({ reportId, patientName, onLinked }) {
         setErrMsg('');
 
         try {
-            const res = await fetch('http://127.0.0.1:8000/api/abdm/link-report', {
+            const res = await fetch(`${API_BASE_URL}/api/abdm/link-report`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ abha_id: abhaId, report_id: reportId || 'RS-DEMO' }),

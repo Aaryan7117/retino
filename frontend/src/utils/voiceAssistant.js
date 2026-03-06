@@ -1,6 +1,7 @@
 /**
  * Wrapper for the native Web Speech API (window.speechSynthesis)
  */
+import { API_BASE_URL } from './apiConfig';
 
 export const SUPPORTED_LANGUAGES = [
     { code: 'ta-IN', label: 'Tamil' },
@@ -80,7 +81,7 @@ export const speakText = (text, langCode, onEnd, onBoundary) => {
 
         // Use our robust FastAPI backend proxy instead of hitting Google directly from the browser
         // This completely bypasses CORS and Origin blocks enforced by modern browsers.
-        const url = `http://localhost:8000/api/tts/?lang=${shortLang}&text=${encodedText}`;
+        const url = `${API_BASE_URL}/api/tts/?lang=${shortLang}&text=${encodedText}`;
 
         currentAudio = new Audio(url);
 
