@@ -55,31 +55,31 @@ export const speakText = (text, langCode, onEnd, onBoundary) => {
     const isChrome = !!window.chrome;
     const voices = window.speechSynthesis.getVoices();
 
-    // 1. Try to find an exact or partial native voice for the language (excluding generic English voices that claim to speak everything)
-    let targetVoice = voices.find(v => v.lang === langCode && !v.name.includes("English"));
-    if (!targetVoice) {
-        targetVoice = voices.find(v => v.lang.startsWith(langCode.split('-')[0]) && !v.name.includes("English"));
-    }
+    // 1. Try to find a native voice for the language
+    const langCodeSearch = langCode.toLowerCase().replace('_', '-');
+    let targetVoice = voices.find(v => {
+        const vLang = v.lang.toLowerCase().replace('_', '-');
+        return vLang === langCodeSearch || vLang.startsWith(langCodeSearch.split('-')[0]);
+    });
 
     // 2. Google provides high quality "Google हिन्दी", "Google தமிழ்" etc. on Chrome
     if (!targetVoice && isChrome) {
-        if (langCode.startsWith('ta')) targetVoice = voices.find(v => v.name.includes('தமிழ்') || v.name.includes('Tamil'));
-        else if (langCode.startsWith('hi')) targetVoice = voices.find(v => v.name.includes('हिन्दी') || v.name.includes('Hindi'));
-        else if (langCode.startsWith('te')) targetVoice = voices.find(v => v.name.includes('తెలుగు') || v.name.includes('Telugu'));
-        else if (langCode.startsWith('kn')) targetVoice = voices.find(v => v.name.includes('ಕನ್ನಡ') || v.name.includes('Kannada'));
-        else if (langCode.startsWith('ml')) targetVoice = voices.find(v => v.name.includes('മലയാളം') || v.name.includes('Malayalam'));
+        targetVoice = voices.find(v =>
+            v.name.includes('தமிழ்') || v.name.includes('Tamil') ||
+            v.name.includes('हिन्दी') || v.name.includes('Hindi') ||
+            v.name.includes('తెలుగు') || v.name.includes('Telugu') ||
+            v.name.includes('ಕನ್ನಡ') || v.name.includes('Kannada') ||
+            v.name.includes('മലയാളം') || v.name.includes('Malayalam')
+        );
     }
 
-    // 3. FALLBACK: If NO native voice is found for the Indic language, fallback to Cloud TTS API
-    // This solves the issue on Windows where regional language packs aren't installed by default.
+    // 3. FALLBACK: If NO native voice is found, hit the backend (requires internet for gTTS)
     if (!targetVoice && !langCode.startsWith('en')) {
-        console.log(`No local voice found for ${langCode}. Falling back to Cloud TTS to ensure demo works...`);
-
+        console.log(`No native voice for ${langCode}. Using cloud fallback via backend...`);
         const shortLang = langCode.split('-')[0];
         const encodedText = encodeURIComponent(text);
 
-        // Use our robust FastAPI backend proxy instead of hitting Google directly from the browser
-        // This completely bypasses CORS and Origin blocks enforced by modern browsers.
+        // Ensure trailing slash if backend expects /api/tts/
         const url = `http://localhost:8000/api/tts/?lang=${shortLang}&text=${encodedText}`;
 
         currentAudio = new Audio(url);

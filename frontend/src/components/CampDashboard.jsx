@@ -11,6 +11,60 @@
 import { useState, useEffect, useRef } from 'react';
 import { getAllPatients, deletePatient } from '../utils/indexedDB';
 
+/* ── Components ────────────────────────────────────────── */
+function HeatmapOverlay({ heatmapBlob, yoloDetections }) {
+    const [blobUrl, setBlobUrl] = useState(null);
+
+    useEffect(() => {
+        if (!heatmapBlob) return;
+        let url;
+        try {
+            url = URL.createObjectURL(heatmapBlob);
+            setBlobUrl(url);
+        } catch (e) {
+            console.error("Failed to create blob URL", e);
+        }
+        return () => {
+            if (url) URL.revokeObjectURL(url);
+        };
+    }, [heatmapBlob]);
+
+    if (!blobUrl) return (
+        <div className="aspect-square w-full max-h-64 bg-slate-950 flex items-center justify-center rounded-lg border border-slate-700">
+            <p className="text-slate-500 text-xs text-center px-4 italic">
+                Heatmap/YOLO data not found for this older record. Please perform a new scan.
+            </p>
+        </div>
+    );
+
+    return (
+        <div className="relative aspect-square w-full max-h-64 bg-black rounded-lg overflow-hidden border border-slate-700">
+            <img src={blobUrl} alt="Heatmap" className="w-full h-full object-contain" />
+            {yoloDetections?.detections?.map((d, i) => {
+                const [x1, y1, x2, y2] = d.bbox;
+                const imgW = yoloDetections.image_shape[1];
+                const imgH = yoloDetections.image_shape[0];
+                return (
+                    <div
+                        key={i}
+                        className="absolute border-2 border-yellow-400 group"
+                        style={{
+                            left: `${(x1 / imgW) * 100}%`,
+                            top: `${(y1 / imgH) * 100}%`,
+                            width: `${((x2 - x1) / imgW) * 100}%`,
+                            height: `${((y2 - y1) / imgH) * 100}%`
+                        }}
+                    >
+                        <span className="absolute -top-5 left-0 bg-yellow-400 text-black text-[8px] font-bold px-1 rounded uppercase whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
+                            {d.class_name} ({Math.round(d.confidence * 100)}%)
+                        </span>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
 /* ── Constants ─────────────────────────────────────────── */
 const GRADE_LABELS = ['No DR', 'Mild DR', 'Moderate DR', 'Severe DR', 'Prolif. DR'];
 const GRADE_COLORS = ['#10b981', '#f59e0b', '#f97316', '#ef4444', '#ec4899'];
@@ -340,12 +394,16 @@ export default function CampDashboard() {
                                     <p className="font-bold text-white max-w-sm">{viewPatient.urgency || riskClass(viewPatient.risk)}</p>
                                 </div>
                             </div>
-                            {viewPatient.heatmap_url && (
-                                <div className="bg-slate-800 rounded-xl p-4">
-                                    <p className="text-xs font-bold text-slate-400 uppercase mb-2">Grad-CAM Heatmap</p>
-                                    <img src={viewPatient.heatmap_url} alt="Heatmap" className="w-full max-h-48 object-contain rounded-lg border border-slate-700 bg-black" />
-                                </div>
-                            )}
+                            <div className="bg-slate-800 rounded-xl p-4">
+                                <p className="text-xs font-bold text-slate-400 uppercase mb-3">Lesion Mapping & Heatmap</p>
+                                <HeatmapOverlay
+                                    heatmapBlob={viewPatient.heatmap_blob}
+                                    yoloDetections={viewPatient.result_yolo}
+                                />
+                                <p className="text-[10px] text-slate-500 mt-2 italic text-center">
+                                    Offline persistent visualization engine enabled.
+                                </p>
+                            </div>
                         </div>
                     </div>
                 </div>

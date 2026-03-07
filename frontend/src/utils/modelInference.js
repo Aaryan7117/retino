@@ -45,6 +45,7 @@ export const analyzeImage = async (imageFile, onProgress) => {
 
                         // Create object URL in main thread so it survives worker termination
                         result.heatmap_url = URL.createObjectURL(heatmapBlob);
+                        result.heatmapBlob = heatmapBlob; // Pass the raw blob back for persistence
 
                         worker.terminate();
                         resolve(result);

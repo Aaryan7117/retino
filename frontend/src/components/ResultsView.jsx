@@ -118,11 +118,19 @@ export default function ResultsView() {
                         </div>
                     </div>
 
-                    <div className="card-elevated space-y-2">
+                    <div className="card-elevated space-y-3">
                         <p className="section-label mb-2">Actions</p>
 
+                        <button
+                            onClick={() => navigate('/yolo-results', { state })}
+                            className="w-full btn-primary bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-900/60 text-sm justify-start gap-3 animate-pulse ring-2 ring-indigo-500/50"
+                        >
+                            <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
+                            <span className="font-black uppercase tracking-wider">🔬 View Detailed Lesion Analysis</span>
+                        </button>
+
                         {/* New VoiceGuide Component */}
-                        <div className="mb-4">
+                        <div className="mb-2">
                             <VoiceGuide patient={state.patient} result={result} />
                         </div>
 
@@ -136,14 +144,6 @@ export default function ResultsView() {
                             reportId={result.report_id || `RS-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`}
                             patientName={state.patient?.name}
                         />
-
-                        <button
-                            onClick={() => navigate('/yolo-results', { state })}
-                            className="w-full btn-secondary text-sm justify-start border-indigo-500/50 text-indigo-400 hover:bg-indigo-500/10"
-                        >
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
-                            Show Detailed Lesion Analysis
-                        </button>
 
                         <button
                             onClick={async () => {

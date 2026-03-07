@@ -90,8 +90,10 @@ export default function Scanner() {
                 risk_score: result.risk_score,
                 risk: RISK_MAP[result.grade] || 'LOW',
                 urgency: result.urgency || '',
+                result_yolo: result.yolo || null,
                 timestamp: now.toISOString(),
                 heatmap_url: result.heatmap_url || null,
+                heatmap_blob: result.heatmapBlob || null, // Persist the actual Blob
             };
 
             try {
