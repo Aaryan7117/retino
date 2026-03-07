@@ -7,6 +7,7 @@ import CampDashboard from './components/CampDashboard';
 import OfflineIndicator from './components/OfflineIndicator';
 import BusinessModel from './components/BusinessModel';
 import ValidationMetrics from './components/ValidationMetrics';
+import YoloResultsPage from './components/YoloResultsPage';
 
 // ─── Placeholder for sections not yet implemented ────────────────────────────
 const Placeholder = ({ emoji, title, note }) => (
@@ -262,6 +263,7 @@ export default function App() {
             <Route path="/camp" element={<CampDashboard />} />
             <Route path="/business" element={<BusinessModel />} />
             <Route path="/validation" element={<ValidationMetrics />} />
+            <Route path="/yolo-results" element={<YoloResultsPage />} />
           </Routes>
         </main>
 

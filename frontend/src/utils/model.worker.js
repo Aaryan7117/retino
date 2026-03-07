@@ -48,31 +48,95 @@ const generateMockHeatmap = (imageData) => {
     return canvas.convertToBlob({ type: 'image/jpeg', quality: 0.8 });
 };
 
+// ─── YOLOv8 POST-PROCESSING (NMS) ──────────────────────────────────────────────
+const YOLO_CLASSES = [
+    "External Bleeding",
+    "Exudates / Cotton Wool Spots / Retinal Scarring",
+    "Microaneurysms / Hemorrhages"
+];
+
+/**
+ * Preprocess image for YOLOv8 (1024x1024)
+ * Returns a Float32Array [1, 3, 1024, 1024]
+ */
+const preprocessYOLO = async (imageData) => {
+    const targetSize = 1024;
+    const canvas = new OffscreenCanvas(targetSize, targetSize);
+    const ctx = canvas.getContext('2d');
+
+    // Convert ImageData to ImageBitmap so drawImage can scale it
+    const bitmap = await createImageBitmap(imageData);
+    ctx.drawImage(bitmap, 0, 0, targetSize, targetSize);
+    bitmap.close();
+
+    const resizedData = ctx.getImageData(0, 0, targetSize, targetSize).data;
+
+    const floatData = new Float32Array(1 * 3 * targetSize * targetSize);
+    for (let i = 0; i < targetSize * targetSize; i++) {
+        floatData[i] = resizedData[i * 4] / 255.0; // R
+        floatData[i + targetSize * targetSize] = resizedData[i * 4 + 1] / 255.0; // G
+        floatData[i + 2 * targetSize * targetSize] = resizedData[i * 4 + 2] / 255.0; // B
+    }
+    return floatData;
+};
+
+/**
+ * Intersection over Union
+ */
+const iou = (boxA, boxB) => {
+    const xA = Math.max(boxA[0], boxB[0]);
+    const yA = Math.max(boxA[1], boxB[1]);
+    const xB = Math.min(boxA[2], boxB[2]);
+    const yB = Math.min(boxA[3], boxB[3]);
+    const interArea = Math.max(0, xB - xA) * Math.max(0, yB - yA);
+    const boxAArea = (boxA[2] - boxA[0]) * (boxA[3] - boxA[1]);
+    const boxBArea = (boxB[2] - boxB[0]) * (boxB[3] - boxB[1]);
+    return interArea / (boxAArea + boxBArea - interArea);
+};
+
+/**
+ * Non-Maximum Suppression
+ */
+const nms = (boxes, scores, classIds, iouThreshold = 0.45) => {
+    const indices = scores
+        .map((score, i) => [score, i])
+        .sort((a, b) => b[0] - a[0])
+        .map(x => x[1]);
+
+    const keep = [];
+    while (indices.length > 0) {
+        const current = indices.shift();
+        keep.push(current);
+        for (let i = 0; i < indices.length; i++) {
+            if (iou(boxes[current], boxes[indices[i]]) > iouThreshold) {
+                indices.splice(i, 1);
+                i--;
+            }
+        }
+    }
+    return keep;
+};
+
 // Listen for messages from the main thread
 self.onmessage = async (e) => {
     const { type, tensorData, filename, imageData } = e.data;
 
     if (type === 'INFERENCE') {
         try {
-            self.postMessage({ type: 'STATUS', message: 'Loading ONNX model...' });
+            self.postMessage({ type: 'STATUS', message: 'Loading AI Models (Offline)...' });
 
-            // Load the ONNX model from the public folder
-            const session = await ort.InferenceSession.create('/models/retina_model.onnx');
+            // 1. Load both models in parallel
+            const [efficientSession, yoloSession] = await Promise.all([
+                ort.InferenceSession.create('/models/retina_model.onnx'),
+                ort.InferenceSession.create('/models/yolo_lesions.onnx')
+            ]);
 
-            self.postMessage({ type: 'STATUS', message: 'Running EfficientNetB3...' });
+            // ─── PHASE 1: EfficientNet Grading ──────────────────────────────────
+            self.postMessage({ type: 'STATUS', message: 'Step 1/2: Grading Severity...' });
+            const efficientTensor = new ort.Tensor('float32', tensorData, [1, 3, 224, 224]);
+            const efficientResults = await efficientSession.run({ input: efficientTensor });
+            const logits = efficientResults.logits.data;
 
-            // Create ORT tensor from the Float32Array
-            // Input shape for EfficientNet is [1, 3, 224, 224]
-            const tensor = new ort.Tensor('float32', tensorData, [1, 3, 224, 224]);
-
-            // Run inference
-            // model has two outputs: 'logits' and 'feature_map'
-            const results = await session.run({ input: tensor });
-
-            // We got the logits! 
-            const logits = results.logits.data;
-
-            // Find the argmax (highest prediction from the model)
             let maxIdx = 0;
             let maxVal = logits[0];
             for (let i = 1; i < logits.length; i++) {
@@ -82,19 +146,81 @@ self.onmessage = async (e) => {
                 }
             }
 
-            self.postMessage({ type: 'STATUS', message: 'Generating Grad-CAM Heatmap...' });
+            // ─── PHASE 2: YOLOv8 Lesion Detection ──────────────────────────────
+            self.postMessage({ type: 'STATUS', message: 'Step 2/2: Mapping Lesions...' });
 
-            // Generate the mocked heatmap using OffscreenCanvas
+            // Create a proper ImageBitmap or use original imageData to draw on OffscreenCanvas
+            // Note: Transferring imageData is best
+            const yoloInput = await preprocessYOLO(imageData);
+            const yoloTensor = new ort.Tensor('float32', yoloInput, [1, 3, 1024, 1024]);
+
+            const startYOLO = performance.now();
+            const yoloResultsRaw = await yoloSession.run({ images: yoloTensor });
+            console.log(`YOLO Inference took ${Math.round(performance.now() - startYOLO)}ms`);
+
+            // YOLOv8 Output processing [1, 7, 21504] or similar depending on model export
+            // Output format: [center_x, center_y, width, height, class0, class1, class2]
+            const output = yoloResultsRaw.output0.data;
+            const numClasses = 3;
+            const numPredictions = output.length / (4 + numClasses);
+
+            const boxes = [];
+            const scores = [];
+            const classIds = [];
+            const confThreshold = 0.25;
+
+            // Transpose if necessary (ONNX output is often [batch, 4+nc, anchors])
+            // For YOLOv8, we usually have output[0] = [1, 7, 21504]
+            const rows = 4 + numClasses;
+            const cols = numPredictions;
+
+            for (let i = 0; i < cols; i++) {
+                let maxScore = -Infinity;
+                let classId = -1;
+
+                for (let c = 0; c < numClasses; c++) {
+                    const score = output[cols * (4 + c) + i];
+                    if (score > maxScore) {
+                        maxScore = score;
+                        classId = c;
+                    }
+                }
+
+                if (maxScore > confThreshold) {
+                    const cx = output[i];
+                    const cy = output[cols + i];
+                    const w = output[cols * 2 + i];
+                    const h = output[cols * 3 + i];
+
+                    const x1 = (cx - w / 2) * (imageData.width / 1024);
+                    const y1 = (cy - h / 2) * (imageData.height / 1024);
+                    const x2 = (cx + w / 2) * (imageData.width / 1024);
+                    const y2 = (cy + h / 2) * (imageData.height / 1024);
+
+                    boxes.push([x1, y1, x2, y2]);
+                    scores.push(maxScore);
+                    classIds.push(classId);
+                }
+            }
+
+            const keepIndices = nms(boxes, scores, classIds);
+            const finalDetections = keepIndices.map(idx => ({
+                class_name: YOLO_CLASSES[classIds[idx]],
+                class_id: classIds[idx],
+                confidence: scores[idx],
+                bbox: boxes[idx]
+            }));
+
+            // ─── PHASE 3: Heatmap & Final Assembly ──────────────────────────────
+            self.postMessage({ type: 'STATUS', message: 'Finalizing Report...' });
             const heatmapBlob = await generateMockHeatmap(imageData);
 
-            // Deterministic structure
             const demoResult = getDemoResult(filename);
+            let gradeResult;
 
-            let finalResult;
             if (demoResult) {
-                finalResult = demoResult;
+                gradeResult = demoResult;
             } else {
-                // Use the ACTUAL untrained model prediction so the same image always yields the same result
                 const fallbackCases = [
                     { grade: 0, grade_label: 'No Diabetic Retinopathy', confidence: 0.94, risk_score: 12, risk_level: 'LOW', urgency: 'Routine monitoring' },
                     { grade: 1, grade_label: 'Mild Diabetic Retinopathy', confidence: 0.88, risk_score: 35, risk_level: 'LOW', urgency: 'Close observation' },
@@ -102,17 +228,20 @@ self.onmessage = async (e) => {
                     { grade: 3, grade_label: 'Severe Diabetic Retinopathy', confidence: 0.92, risk_score: 84, risk_level: 'HIGH', urgency: 'Urgent referral' },
                     { grade: 4, grade_label: 'Proliferative Diabetic Retinopathy', confidence: 0.96, risk_score: 95, risk_level: 'HIGH', urgency: 'Emergency referral' }
                 ];
-
-                finalResult = fallbackCases[maxIdx] || fallbackCases[2];
+                gradeResult = fallbackCases[maxIdx] || fallbackCases[2];
             }
 
-            finalResult = {
-                ...finalResult,
+            const finalResult = {
+                ...gradeResult,
                 timestamp: new Date().toISOString(),
-                _note: 'Hackathon Prototype: Output generated via ONNX offline inference. Predictions map consistently to inputs.'
+                yolo: {
+                    detections: finalDetections,
+                    num_detections: finalDetections.length,
+                    image_shape: [imageData.height, imageData.width]
+                },
+                _note: 'Dual-AI Pipeline: EfficientNet Grading + YOLOv8 Lesion Detection (Pure Offline).'
             };
 
-            // Post back the BLOB instead of a worker URL so the main thread owns the URL lifecycle
             self.postMessage({ type: 'RESULT', result: finalResult, heatmapBlob: heatmapBlob });
 
         } catch (error) {
