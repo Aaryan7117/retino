@@ -33,12 +33,12 @@ function UpdateToast({ wb, onDismiss }) {
       <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
       </svg>
-      <span>New version available</span>
+      <span>New update available. Refresh to update.</span>
       <button
         onClick={handleUpdate}
         className="ml-1 bg-white text-blue-700 px-3 py-1 rounded-lg text-xs font-bold hover:bg-blue-50 transition-colors"
       >
-        Update now
+        Refresh
       </button>
       <button
         onClick={onDismiss}
@@ -51,7 +51,59 @@ function UpdateToast({ wb, onDismiss }) {
   );
 }
 
+// ─── PWA install prompt button (always visible per ISSUE 11) ────────────────────
+function InstallButton() {
+  const [prompt, setPrompt] = useState(null);
+  const [installed, setInstalled] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia
+      ? window.matchMedia('(display-mode: standalone)').matches
+      : false,
+  );
 
+  useEffect(() => {
+    const handler = (e) => {
+      e.preventDefault();
+      setPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  const handleInstall = async () => {
+    if (installed) {
+      return;
+    }
+    if (prompt) {
+      prompt.prompt();
+      const { outcome } = await prompt.userChoice;
+      if (outcome === 'accepted') {
+        setInstalled(true);
+        setPrompt(null);
+      }
+    }
+  };
+
+  const isStandalone = installed;
+  const label = isStandalone ? 'Open in App' : 'Install App';
+  const buttonClass =
+    'inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full border border-blue-600 bg-blue-900/40 text-blue-300 hover:bg-blue-800/60 hover:text-white transition-all duration-150 shrink-0';
+
+  return (
+    <button
+      id="install-btn"
+      type="button"
+      onClick={isStandalone ? () => window.location.reload() : handleInstall}
+      title={isStandalone ? 'Open RetinaScan AI' : 'Install RetinaScan AI as an app'}
+      className={buttonClass}
+    >
+      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+      </svg>
+      {label}
+    </button>
+  );
+}
 
 const NAV = [
   { to: '/', label: 'Dashboard' },
@@ -130,6 +182,7 @@ export default function App() {
             <div className="flex items-center gap-2 shrink-0">
               {/* Desktop Install + Status */}
               <div className="hidden md:flex items-center gap-2">
+                <InstallButton />
                 <OfflineIndicator />
               </div>
 
@@ -193,6 +246,7 @@ export default function App() {
               </nav>
 
               <div className="flex items-center justify-between gap-3 pt-2 border-t border-slate-800">
+                <InstallButton />
                 {/* Connection status is already rendered above; keep this layout light */}
               </div>
             </div>

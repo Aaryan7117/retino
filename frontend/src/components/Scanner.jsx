@@ -92,9 +92,6 @@ export default function Scanner() {
                 urgency: result.urgency || '',
                 timestamp: now.toISOString(),
                 heatmap_url: result.heatmap_url || null,
-                confirmed: false,
-                referred: false,
-                followUpRequired: false
             };
 
             try {

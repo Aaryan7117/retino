@@ -1,11 +1,6 @@
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-
-const STATS = [
-    { label: "Today's Scans", value: '0', icon: '📋', bg: 'bg-blue-600', glow: 'shadow-blue-900/40' },
-    { label: 'High Risk', value: '0', icon: '⚠️', bg: 'bg-rose-600', glow: 'shadow-rose-900/40' },
-    { label: 'Avg Scan Time', value: '—', icon: '⏱️', bg: 'bg-amber-500', glow: 'shadow-amber-900/40' },
-    { label: 'Referrals Sent', value: '0', icon: '✅', bg: 'bg-emerald-600', glow: 'shadow-emerald-900/40' },
-];
+import { getAllPatients } from '../utils/indexedDB';
 
 const FEATURES = [
     { icon: '🧠', title: 'AI-Powered Grading', bg: 'bg-blue-600/20   border-blue-700', desc: 'EfficientNetB3 on APTOS 2019 — 92% sensitivity, Grade 0–4 in under 3 seconds.' },
@@ -13,8 +8,51 @@ const FEATURES = [
     { icon: '🇮🇳', title: 'ABDM / ABHA Ready', bg: 'bg-emerald-600/20 border-emerald-700', desc: 'Link every scan to a National ABHA Health ID. Government-deployment ready.' },
 ];
 
+function formatDashboardDate() {
+    return new Date().toLocaleDateString('en-GB', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+    });
+}
+
 export default function Dashboard() {
-    const today = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    const [todayPatients, setTodayPatients] = useState([]);
+    const [dashboardDate, setDashboardDate] = useState(formatDashboardDate);
+
+    const todayStr = new Date().toISOString().slice(0, 10);
+
+    async function loadPatients() {
+        try {
+            const all = await getAllPatients();
+            const today = all.filter((p) => p.timestamp && String(p.timestamp).slice(0, 10) === todayStr);
+            setTodayPatients(today);
+        } catch (err) {
+            console.error('Failed to load patients for dashboard', err);
+        }
+    }
+
+    useEffect(() => {
+        loadPatients();
+        setDashboardDate(formatDashboardDate());
+        const id = setInterval(() => {
+            loadPatients();
+            setDashboardDate(formatDashboardDate());
+        }, 5000);
+        return () => clearInterval(id);
+    }, []);
+
+    const todayScans = todayPatients.length;
+    const highRisk = todayPatients.filter((p) => p.risk === 'HIGH').length;
+    const referrals = todayPatients.filter((p) => p.risk === 'HIGH' || p.risk === 'MEDIUM').length;
+
+    const STATS = [
+        { label: "Today's Scans", value: String(todayScans), icon: '📋', bg: 'bg-blue-600', glow: 'shadow-blue-900/40' },
+        { label: 'High Risk', value: String(highRisk), icon: '⚠️', bg: 'bg-rose-600', glow: 'shadow-rose-900/40' },
+        { label: 'Avg Scan Time', value: '—', icon: '⏱️', bg: 'bg-amber-500', glow: 'shadow-amber-900/40' },
+        { label: 'Referrals Sent', value: String(referrals), icon: '✅', bg: 'bg-emerald-600', glow: 'shadow-emerald-900/40' },
+    ];
 
     return (
         <div className="space-y-8">
@@ -26,7 +64,7 @@ export default function Dashboard() {
                     <div>
                         <p className="section-label text-blue-300">Welcome Back</p>
                         <h1 className="text-4xl font-black text-white mt-1">Camp Dashboard</h1>
-                        <p className="text-blue-200 mt-2 text-sm">{today} · Eye Camp Operations</p>
+                        <p className="text-blue-200 mt-2 text-sm">{dashboardDate} · Eye Camp Operations</p>
                     </div>
                     <Link to="/scan" className="btn-primary px-6 py-3 text-base whitespace-nowrap self-start sm:self-auto">
                         + New Scan
@@ -67,12 +105,20 @@ export default function Dashboard() {
                     </div>
                     <Link to="/camp" className="btn-secondary text-sm">View Camp Stats →</Link>
                 </div>
-                <div className="flex flex-col items-center py-14 text-center">
-                    <div className="w-16 h-16 rounded-2xl bg-slate-700 flex items-center justify-center mb-4 text-2xl">👁️</div>
-                    <p className="font-bold text-white">No scans yet today</p>
-                    <p className="text-slate-400 text-sm mt-1">Create your first scan to begin screening</p>
-                    <Link to="/scan" className="btn-primary mt-5 px-6">Start Screening</Link>
-                </div>
+                {todayScans === 0 ? (
+                    <div className="flex flex-col items-center py-14 text-center">
+                        <div className="w-16 h-16 rounded-2xl bg-slate-700 flex items-center justify-center mb-4 text-2xl">👁️</div>
+                        <p className="font-bold text-white">No scans yet today</p>
+                        <p className="text-slate-400 text-sm mt-1">Create your first scan to begin screening</p>
+                        <Link to="/scan" className="btn-primary mt-5 px-6">Start Screening</Link>
+                    </div>
+                ) : (
+                    <div className="flex flex-col items-center py-10 text-center">
+                        <p className="font-bold text-white">{todayScans} scan{todayScans !== 1 ? 's' : ''} today</p>
+                        <p className="text-slate-400 text-sm mt-1">View full queue and stats on Camp Stats</p>
+                        <Link to="/camp" className="btn-primary mt-5 px-6">View Camp Stats</Link>
+                    </div>
+                )}
             </div>
         </div>
     );

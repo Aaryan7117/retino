@@ -29,11 +29,7 @@ class GradCAM:
         self.model.zero_grad()
 
         # Forward pass
-        outputs = self.model(input_tensor)
-        if isinstance(outputs, tuple):
-            logits = outputs[0]
-        else:
-            logits = outputs
+        logits, _ = self.model(input_tensor)
 
         if target_class is None:
             target_class = torch.argmax(logits, dim=1).item()

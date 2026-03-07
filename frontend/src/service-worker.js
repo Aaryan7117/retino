@@ -5,7 +5,10 @@
  *   • ONNX model & sample data  → Cache-first (StaleWhileRevalidate on first hit)
  *   • FastAPI /api/* calls      → Network-first with IndexedDB fallback handled in the app
  *   • Background Sync           → Queues failed POST requests for retry when online
+ *
+ * ISSUE 12: Bump APP_VERSION on redeploy so users get fresh caches and update banner.
  */
+const APP_VERSION = '1.0.0';
 
 import { clientsClaim } from 'workbox-core';
 import { precacheAndRoute, cleanupOutdatedCaches } from 'workbox-precaching';
@@ -19,7 +22,7 @@ import { CacheableResponsePlugin } from 'workbox-cacheable-response';
 import { ExpirationPlugin } from 'workbox-expiration';
 import { BackgroundSyncPlugin } from 'workbox-background-sync';
 
-// ─── Core ────────────────────────────────────────────────────────────────────
+// ─── Core: skip waiting and claim clients immediately (ISSUE 12) ──────────────
 self.skipWaiting();
 clientsClaim();
 
@@ -27,12 +30,25 @@ clientsClaim();
 cleanupOutdatedCaches();
 precacheAndRoute(self.__WB_MANIFEST);
 
+// ─── On activate: clear caches from previous version ────────────────────────
+self.addEventListener('activate', (event) => {
+    event.waitUntil(
+        caches.keys().then((keys) =>
+            Promise.all(
+                keys
+                    .filter((name) => !name.includes(APP_VERSION) && name.startsWith('retinascan-'))
+                    .map((name) => caches.delete(name))
+            )
+        )
+    );
+});
+
 // ─── App-Shell navigation (SPA catch-all) ────────────────────────────────────
 // Return the cached index.html for all navigation requests so React Router works offline.
 registerRoute(
     new NavigationRoute(
         new NetworkFirst({
-            cacheName: 'retinascan-navigation',
+            cacheName: `retinascan-navigation-${APP_VERSION}`,
             networkTimeoutSeconds: 3,
             plugins: [
                 new CacheableResponsePlugin({ statuses: [200] }),
@@ -48,7 +64,7 @@ registerRoute(
         request.destination === 'style' ||
         request.destination === 'font',
     new CacheFirst({
-        cacheName: 'retinascan-static-v1',
+        cacheName: `retinascan-static-${APP_VERSION}`,
         plugins: [
             new CacheableResponsePlugin({ statuses: [0, 200] }),
             new ExpirationPlugin({ maxEntries: 60, maxAgeSeconds: 30 * 24 * 60 * 60 }),
@@ -60,7 +76,7 @@ registerRoute(
 registerRoute(
     ({ request }) => request.destination === 'image',
     new CacheFirst({
-        cacheName: 'retinascan-images-v1',
+        cacheName: `retinascan-images-${APP_VERSION}`,
         plugins: [
             new CacheableResponsePlugin({ statuses: [0, 200] }),
             new ExpirationPlugin({ maxEntries: 50, maxAgeSeconds: 7 * 24 * 60 * 60 }),
@@ -72,7 +88,7 @@ registerRoute(
 registerRoute(
     ({ url }) => url.pathname.startsWith('/models/'),
     new CacheFirst({
-        cacheName: 'retinascan-models-v1',
+        cacheName: `retinascan-models-${APP_VERSION}`,
         plugins: [
             new CacheableResponsePlugin({ statuses: [0, 200] }),
             new ExpirationPlugin({ maxEntries: 3, maxAgeSeconds: 90 * 24 * 60 * 60 }),
@@ -84,7 +100,7 @@ registerRoute(
 registerRoute(
     ({ url }) => url.pathname.startsWith('/sample-data/'),
     new StaleWhileRevalidate({
-        cacheName: 'retinascan-sample-data-v1',
+        cacheName: `retinascan-sample-data-${APP_VERSION}`,
         plugins: [new CacheableResponsePlugin({ statuses: [0, 200] })],
     })
 );
@@ -93,7 +109,7 @@ registerRoute(
 registerRoute(
     ({ url }) => url.pathname.startsWith('/api/'),
     new NetworkFirst({
-        cacheName: 'retinascan-api-v1',
+        cacheName: `retinascan-api-${APP_VERSION}`,
         networkTimeoutSeconds: 10,
         plugins: [
             new CacheableResponsePlugin({ statuses: [200] }),
@@ -111,7 +127,7 @@ registerRoute(
     ({ url, request }) =>
         url.pathname.startsWith('/api/') && request.method === 'POST',
     new NetworkFirst({
-        cacheName: 'retinascan-api-post-v1',
+        cacheName: `retinascan-api-post-${APP_VERSION}`,
         plugins: [bgSyncPlugin],
         fetchOptions: { credentials: 'same-origin' },
     }),

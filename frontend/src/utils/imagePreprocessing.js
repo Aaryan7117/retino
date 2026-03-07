@@ -43,11 +43,14 @@ export const validateFundusImage = (imageData) => {
         }
 
         const mean = sum / count;
-        const variance = sumSq / count - mean * mean;
+        const variance = Math.max(0, (sumSq / count) - (mean * mean));
         return { mean, variance };
     };
 
+    const maxBrightness = 255;
+
     // ── STEP 1: Corner Brightness Check ────────────────────────────────
+    // Sample 4 small 20x20 pixel regions near each corner.
     const cornerSize = 20;
     const tl = getRegionStats(0, 0, cornerSize, cornerSize).mean;
     const tr = getRegionStats(width - cornerSize, 0, cornerSize, cornerSize).mean;
@@ -55,34 +58,42 @@ export const validateFundusImage = (imageData) => {
     const br = getRegionStats(width - cornerSize, height - cornerSize, cornerSize, cornerSize).mean;
 
     const corners = [tl, tr, bl, br];
-    const maxBrightness = 255;
     const darkThreshold = 0.4 * maxBrightness; // 40% of max
-    const darkCorners = corners.filter((c) => c < darkThreshold).length;
+    const darkCornersCount = corners.filter((c) => c < darkThreshold).length;
 
+    // Accept if at least 3 out of 4 corners have brightness < 40% of max.
+    const step1Failed = darkCornersCount < 3;
+
+    // ── STEP 2: Center Variation Check ─────────────────────────────────
+    // Sample a central 50x50 region.
     const centerSize = 50;
     const centerX = (width - centerSize) / 2;
     const centerY = (height - centerSize) / 2;
     const centerStats = getRegionStats(centerX, centerY, centerSize, centerSize);
 
-    // ── STEP 2: Center Variation Check ─────────────────────────────────
-    const lowVarianceThreshold = 30; // almost flat / document-like
-    const veryBrightThreshold = 0.9 * maxBrightness; // > 90% brightness
+    // Reject if Variance < threshold (very low texture) OR Center brightness > 90% and variance very low.
+    const lowVarianceThreshold = 40; // Flat images like paper/documents
+    const brightThreshold = 0.9 * maxBrightness; // > 90%
 
-    const failsTexture =
+    const step2Failed =
         centerStats.variance < lowVarianceThreshold ||
-        (centerStats.mean > veryBrightThreshold && centerStats.variance < lowVarianceThreshold);
+        (centerStats.mean > brightThreshold && centerStats.variance < (lowVarianceThreshold * 1.5));
 
-    // ── STEP 3: Circularity Heuristic (Soft) ──────────────────────────
+    // ── STEP 3: Circularity Heuristic (Soft Check) ──────────────────────────
+    // Compute difference between center brightness and corner brightness.
     const avgCornerBrightness = corners.reduce((a, b) => a + b, 0) / corners.length;
-    const cornerBrightThreshold = 0.7 * maxBrightness;
-    const smallDifference = 20; // brightness difference tolerance
 
-    const failsCircularity =
-        avgCornerBrightness > cornerBrightThreshold &&
+    // If corners are bright and center also bright → likely not fundus (e.g., full white document).
+    // Fundus images have brighter center and darker corners.
+    const brightCornerThreshold = 0.6 * maxBrightness;
+    const smallDifference = 30; // Brightness difference tolerance for "flat" images
+
+    const step3Failed =
+        avgCornerBrightness > brightCornerThreshold &&
         Math.abs(centerStats.mean - avgCornerBrightness) < smallDifference;
 
-    // Decision logic
-    if (darkCorners < 3 || failsTexture || failsCircularity) {
+    // Decision Logic
+    if (step1Failed || step2Failed || step3Failed) {
         throw new Error('Invalid Image: Please upload a retinal fundus photograph (eye image from fundus camera).');
     }
 
