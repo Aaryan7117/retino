@@ -49,8 +49,7 @@ export const validateFundusImage = (imageData) => {
 
     const maxBrightness = 255;
 
-    // ── STEP 1: Corner Brightness Check ────────────────────────────────
-    // Sample 4 small 20x20 pixel regions near each corner.
+    // ── STEP 1: Corner Brightness Check (Relaxed) ──────────────────────
     const cornerSize = 20;
     const tl = getRegionStats(0, 0, cornerSize, cornerSize).mean;
     const tr = getRegionStats(width - cornerSize, 0, cornerSize, cornerSize).mean;
@@ -58,39 +57,40 @@ export const validateFundusImage = (imageData) => {
     const br = getRegionStats(width - cornerSize, height - cornerSize, cornerSize, cornerSize).mean;
 
     const corners = [tl, tr, bl, br];
-    const darkThreshold = 0.4 * maxBrightness; // 40% of max
+    // Relaxed threshold: 60% of max instead of 40%
+    const darkThreshold = 0.6 * maxBrightness;
     const darkCornersCount = corners.filter((c) => c < darkThreshold).length;
 
-    // Accept if at least 3 out of 4 corners have brightness < 40% of max.
-    const step1Failed = darkCornersCount < 3;
+    // Relaxed: Accept if at least 2 out of 4 corners are dark (instead of 3).
+    const step1Failed = darkCornersCount < 2;
 
-    // ── STEP 2: Center Variation Check ─────────────────────────────────
+    // ── STEP 2: Center Variation Check (Relaxed) ───────────────────────
     // Sample a central 50x50 region.
     const centerSize = 50;
     const centerX = (width - centerSize) / 2;
     const centerY = (height - centerSize) / 2;
     const centerStats = getRegionStats(centerX, centerY, centerSize, centerSize);
 
-    // Reject if Variance < threshold (very low texture) OR Center brightness > 90% and variance very low.
-    const lowVarianceThreshold = 40; // Flat images like paper/documents
-    const brightThreshold = 0.9 * maxBrightness; // > 90%
+    // Only reject if Variance is EXTREMELY low (pure document/uniform color)
+    const extremelyLowVariance = 15;
+    const brightThreshold = 0.9 * maxBrightness;
 
+    // Fail only if it's both extremely flat AND bright (document-like)
     const step2Failed =
-        centerStats.variance < lowVarianceThreshold ||
-        (centerStats.mean > brightThreshold && centerStats.variance < (lowVarianceThreshold * 1.5));
+        centerStats.variance < extremelyLowVariance &&
+        centerStats.mean > brightThreshold;
 
-    // ── STEP 3: Circularity Heuristic (Soft Check) ──────────────────────────
+    // ── STEP 3: Circularity Heuristic (Relaxed) ────────────────────────
     // Compute difference between center brightness and corner brightness.
     const avgCornerBrightness = corners.reduce((a, b) => a + b, 0) / corners.length;
 
-    // If corners are bright and center also bright → likely not fundus (e.g., full white document).
-    // Fundus images have brighter center and darker corners.
-    const brightCornerThreshold = 0.6 * maxBrightness;
-    const smallDifference = 30; // Brightness difference tolerance for "flat" images
+    // Only fail if almost no difference between center and corners (extremely flat and bright)
+    const extremelyBrightCorner = 0.8 * maxBrightness;
+    const tinyDifference = 15;
 
     const step3Failed =
-        avgCornerBrightness > brightCornerThreshold &&
-        Math.abs(centerStats.mean - avgCornerBrightness) < smallDifference;
+        avgCornerBrightness > extremelyBrightCorner &&
+        Math.abs(centerStats.mean - avgCornerBrightness) < tinyDifference;
 
     // Decision Logic
     if (step1Failed || step2Failed || step3Failed) {
