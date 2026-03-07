@@ -14,32 +14,22 @@
 export const validateFundusImage = (imageData) => {
     const { width, height, data } = imageData;
 
-    // Helper: compute mean brightness (0–255) and variance for a rectangular region
-    const getRegionStats = (startX, startY, w, h) => {
+    // ── STEP 1: Resolution Check ──────────────────────────────────────
+    // Reject only if the image is extremely small
+    if (width < 200 || height < 200) {
+        throw new Error('Invalid Image: Resolution too low (<200px). Please upload a high-quality retinal scan.');
+    }
+
+    // Helper: compute mean brightness (0–255) and variance for total image area
+    const getGlobalStats = () => {
         let sum = 0;
         let sumSq = 0;
-        let count = 0;
+        const count = width * height;
 
-        const x0 = Math.max(0, Math.floor(startX));
-        const y0 = Math.max(0, Math.floor(startY));
-        const x1 = Math.min(width, Math.floor(startX + w));
-        const y1 = Math.min(height, Math.floor(startY + h));
-
-        for (let y = y0; y < y1; y++) {
-            for (let x = x0; x < x1; x++) {
-                const idx = (y * width + x) * 4;
-                const r = data[idx];
-                const g = data[idx + 1];
-                const b = data[idx + 2];
-                const brightness = (r + g + b) / 3; // 0–255
-                sum += brightness;
-                sumSq += brightness * brightness;
-                count++;
-            }
-        }
-
-        if (!count) {
-            return { mean: 0, variance: 0 };
+        for (let i = 0; i < data.length; i += 4) {
+            const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+            sum += brightness;
+            sumSq += brightness * brightness;
         }
 
         const mean = sum / count;
@@ -47,54 +37,24 @@ export const validateFundusImage = (imageData) => {
         return { mean, variance };
     };
 
+    const stats = getGlobalStats();
     const maxBrightness = 255;
 
-    // ── STEP 1: Corner Brightness Check (Relaxed) ──────────────────────
-    const cornerSize = 20;
-    const tl = getRegionStats(0, 0, cornerSize, cornerSize).mean;
-    const tr = getRegionStats(width - cornerSize, 0, cornerSize, cornerSize).mean;
-    const bl = getRegionStats(0, height - cornerSize, cornerSize, cornerSize).mean;
-    const br = getRegionStats(width - cornerSize, height - cornerSize, cornerSize, cornerSize).mean;
+    // ── STEP 2: Whiteness Check (>90%) ────────────────────────────────
+    // Reject only if the image is nearly pure white (like a blank document)
+    const whitenessThreshold = 0.9 * maxBrightness; // ~230
+    const isPureWhite = stats.mean > whitenessThreshold;
 
-    const corners = [tl, tr, bl, br];
-    // Relaxed threshold: 60% of max instead of 40%
-    const darkThreshold = 0.6 * maxBrightness;
-    const darkCornersCount = corners.filter((c) => c < darkThreshold).length;
+    // ── STEP 3: Ultra-Low Variance (Flat Color) ───────────────────────
+    // Reject only if the image is perfectly uniform (no texture at all)
+    // Real fundus images always have some texture from vessels and gradients.
+    const extremelyLowVariance = 5;
+    const isFlatColor = stats.variance < extremelyLowVariance;
 
-    // Relaxed: Accept if at least 2 out of 4 corners are dark (instead of 3).
-    const step1Failed = darkCornersCount < 2;
-
-    // ── STEP 2: Center Variation Check (Relaxed) ───────────────────────
-    // Sample a central 50x50 region.
-    const centerSize = 50;
-    const centerX = (width - centerSize) / 2;
-    const centerY = (height - centerSize) / 2;
-    const centerStats = getRegionStats(centerX, centerY, centerSize, centerSize);
-
-    // Only reject if Variance is EXTREMELY low (pure document/uniform color)
-    const extremelyLowVariance = 15;
-    const brightThreshold = 0.9 * maxBrightness;
-
-    // Fail only if it's both extremely flat AND bright (document-like)
-    const step2Failed =
-        centerStats.variance < extremelyLowVariance &&
-        centerStats.mean > brightThreshold;
-
-    // ── STEP 3: Circularity Heuristic (Relaxed) ────────────────────────
-    // Compute difference between center brightness and corner brightness.
-    const avgCornerBrightness = corners.reduce((a, b) => a + b, 0) / corners.length;
-
-    // Only fail if almost no difference between center and corners (extremely flat and bright)
-    const extremelyBrightCorner = 0.8 * maxBrightness;
-    const tinyDifference = 15;
-
-    const step3Failed =
-        avgCornerBrightness > extremelyBrightCorner &&
-        Math.abs(centerStats.mean - avgCornerBrightness) < tinyDifference;
-
-    // Decision Logic
-    if (step1Failed || step2Failed || step3Failed) {
-        throw new Error('Invalid Image: Please upload a retinal fundus photograph (eye image from fundus camera).');
+    // Final Decision: Only block clearly non-retinal "blank" images.
+    // Allow inference to proceed in all other cases.
+    if (isPureWhite || (isFlatColor && stats.mean > 150)) {
+        throw new Error('Invalid Image: Please upload a retinal fundus photograph (eye image from fundus camera). Non-eye content detected.');
     }
 
     return true;
