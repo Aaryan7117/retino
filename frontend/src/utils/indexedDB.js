@@ -7,7 +7,7 @@
 import { openDB } from 'idb';
 
 const DB_NAME = 'RetinaScanDB';
-const DB_VERSION = 3;
+const DB_VERSION = 5;
 const STORE = 'patients';
 const SYNC_STORE = 'sync_queue';
 
@@ -30,6 +30,19 @@ async function getDB() {
                         autoIncrement: true,
                     });
                     sq.createIndex('createdAt', 'createdAt');
+                }
+            }
+            // Feature 4: Doctor reviews store (v4)
+            if (oldVersion < 4) {
+                if (!db.objectStoreNames.contains('doctor_reviews')) {
+                    db.createObjectStore('doctor_reviews', { keyPath: 'patientId' });
+                }
+            }
+            // Feature 7: Audit log store (v5)
+            if (oldVersion < 5) {
+                if (!db.objectStoreNames.contains('audit_log')) {
+                    db.createObjectStore('audit_log', { keyPath: 'id', autoIncrement: true })
+                        .createIndex('ts', 'ts');
                 }
             }
         },
@@ -116,4 +129,43 @@ export async function flushSyncQueue() {
         }
     }
     return { succeeded, failed };
+}
+
+// ─── Feature 4: Doctor Review Portal ───────────────────────────────────────
+
+export async function saveReview(review) {
+    const db = await getDB();
+    return db.put('doctor_reviews', { ...review, reviewedAt: new Date().toISOString() });
+}
+
+export async function getReview(patientId) {
+    const db = await getDB();
+    return db.get('doctor_reviews', patientId);
+}
+
+export async function getAllReviews() {
+    const db = await getDB();
+    return db.getAll('doctor_reviews');
+}
+
+// ─── Feature 7: Audit Log ────────────────────────────────────────────────────
+
+function _devId() {
+    let id = localStorage.getItem('rs_dev_id');
+    if (!id) {
+        id = 'DEV-' + Math.random().toString(36).slice(2, 10).toUpperCase();
+        localStorage.setItem('rs_dev_id', id);
+    }
+    return id;
+}
+
+export async function logAudit(evt) {
+    const db = await getDB();
+    return db.add('audit_log', { ...evt, ts: new Date().toISOString(), device: _devId() });
+}
+
+export async function getAuditLog(n = 50) {
+    const db = await getDB();
+    const all = await db.getAll('audit_log');
+    return all.sort((a, b) => new Date(b.ts) - new Date(a.ts)).slice(0, n);
 }

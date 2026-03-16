@@ -1,21 +1,38 @@
-/**
- * CampDashboard.jsx
- * Section 6: Real-time camp operations dashboard.
- * Features:
- *  - Animated counter stat cards
- *  - SVG donut chart for DR grade distribution
- *  - Live-feed: new "arriving" scan every 12 seconds (demo)
- *  - IndexedDB integration: real scans from completed analyses appear here
- *  - Smooth row-entrance animations
- */
 import { useState, useEffect, useRef } from 'react';
-import { getAllPatients, deletePatient } from '../utils/indexedDB';
+import { getAllPatients, deletePatient, getAuditLog } from '../utils/indexedDB';
+
+// ── Feature 6: Camp CSV Export ───────────────────────────────────────────────
+function exportCSV(patients) {
+    const HDR = ['ID', 'Name', 'Age', 'Gender', 'Diabetic Yrs', 'Contact', 'Overall Grade',
+        'Right Eye Grade', 'Left Eye Grade', 'Diagnosis', 'Confidence%', 'Risk', 'Urgency', 'Scan Time'];
+    const ROWS = patients.map(p => [
+        p.id || '', p.name || '', p.age || '', p.gender || '',
+        p.diabeticSince || 0, p.contact || '',
+        p.grade ?? '',
+        p.rightEye?.grade ?? '',
+        p.leftEye?.grade ?? '',
+        (p.diagnosis || '').replace(/,/g, ';'),
+        Math.round((p.confidence || 0) * 100),
+        p.risk || '', (p.urgency || '').replace(/,/g, ';'),
+        p.timestamp ? new Date(p.timestamp).toLocaleString('en-IN') : ''
+    ]);
+    const csv = [HDR, ...ROWS].map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    a.download = `RetinaScan_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+}
 
 /* ── Components ────────────────────────────────────────── */
-function HeatmapOverlay({ heatmapBlob, yoloDetections }) {
+function HeatmapOverlay({ heatmapBlob, heatmapUrl, yoloDetections }) {
     const [blobUrl, setBlobUrl] = useState(null);
 
     useEffect(() => {
+        // Support both blob (old single-eye) and direct URL (new dual-eye)
+        if (heatmapUrl) {
+            setBlobUrl(heatmapUrl);
+            return;
+        }
         if (!heatmapBlob) return;
         let url;
         try {
@@ -27,7 +44,7 @@ function HeatmapOverlay({ heatmapBlob, yoloDetections }) {
         return () => {
             if (url) URL.revokeObjectURL(url);
         };
-    }, [heatmapBlob]);
+    }, [heatmapBlob, heatmapUrl]);
 
     if (!blobUrl) return (
         <div className="aspect-square w-full max-h-64 bg-slate-950 flex items-center justify-center rounded-lg border border-slate-700">
@@ -250,13 +267,18 @@ function PatientRow({ p, isNew, onDelete, onView }) {
    ══════════════════════════════════════════════════════════ */
 export default function CampDashboard() {
     const [patients, setPatients] = useState([]);
-    const [viewPatient, setViewPatient] = useState(null); // For modal
+    const [viewPatient, setViewPatient] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
+    // Feature 7: Audit log state
+    const [auditLog, setAuditLog] = useState([]);
+    const [showAudit, setShowAudit] = useState(false);
 
     async function loadPatients() {
         try {
             const real = await getAllPatients();
             setPatients(real);
+            // Feature 7: Load audit log
+            getAuditLog(30).then(setAuditLog).catch(() => {});
         } catch (err) {
             console.error('Failed to load patients', err);
         } finally {
@@ -297,9 +319,19 @@ export default function CampDashboard() {
                     <h1 className="text-4xl font-black text-white">Today's Camp Stats</h1>
                     <p className="text-slate-400 text-sm mt-1">Eye Camp · {today}</p>
                 </div>
-                <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-900/30 border border-emerald-700/40">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                    <span className="text-emerald-400 text-sm font-bold">Live Updates Active</span>
+                <div className="flex items-center gap-3 flex-wrap">
+                    {/* Feature 6: CSV Export button */}
+                    <button onClick={() => exportCSV(patients)} disabled={!patients.length}
+                        className='flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm font-bold bg-emerald-950/60 border border-emerald-800/60 text-emerald-400 hover:bg-emerald-900/60 transition-colors disabled:opacity-40'>
+                        <svg className='w-4 h-4' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2}>
+                            <path strokeLinecap='round' strokeLinejoin='round' d='M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4' />
+                        </svg>
+                        Export CSV
+                    </button>
+                    <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-900/30 border border-emerald-700/40">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                        <span className="text-emerald-400 text-sm font-bold">Live Updates Active</span>
+                    </div>
                 </div>
             </div>
 
@@ -360,6 +392,34 @@ export default function CampDashboard() {
                 <DonutChart patients={patients} />
             </div>
 
+            {/* ── Feature 7: Audit Log ───────────────────────── */}
+            <div className='card-elevated mt-6'>
+                <button onClick={() => setShowAudit(s => !s)}
+                    className='w-full flex justify-between text-sm font-bold text-slate-400'>
+                    <span>Audit Log ({auditLog.length})</span>
+                    <span>{showAudit ? '▲' : '▼'}</span>
+                </button>
+                {showAudit && (
+                    <table className='data-table w-full mt-3 text-xs'>
+                        <thead><tr><th>Time</th><th>Type</th><th>Grade</th><th>Device</th></tr></thead>
+                        <tbody>{auditLog.map(e => (
+                            <tr key={e.id}>
+                                <td className='font-mono'>{new Date(e.ts).toLocaleTimeString('en-IN')}</td>
+                                <td>{e.type}</td><td>{e.grade}</td>
+                                <td className='font-mono text-slate-500'>{e.device}</td>
+                            </tr>
+                        ))}</tbody>
+                    </table>
+                )}
+            </div>
+
+            {/* ── Feature 4: Doctor Review Portal link ─────── */}
+            <div className='text-center mt-4'>
+                <a href='/doctor' className='text-xs text-slate-600 hover:text-red-400 transition-colors'>
+                    Doctor Review Portal
+                </a>
+            </div>
+
             {/* ── View Patient Modal ───────────────────────── */}
             {viewPatient && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
@@ -398,7 +458,8 @@ export default function CampDashboard() {
                                 <p className="text-xs font-bold text-slate-400 uppercase mb-3">Lesion Mapping & Heatmap</p>
                                 <HeatmapOverlay
                                     heatmapBlob={viewPatient.heatmap_blob}
-                                    yoloDetections={viewPatient.result_yolo}
+                                    heatmapUrl={viewPatient.heatmap_url || viewPatient.rightEye?.heatmap_url}
+                                    yoloDetections={viewPatient.result_yolo || viewPatient.rightEye?.yoloDetections}
                                 />
                                 <p className="text-[10px] text-slate-500 mt-2 italic text-center">
                                     Offline persistent visualization engine enabled.

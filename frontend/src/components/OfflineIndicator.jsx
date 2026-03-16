@@ -1,23 +1,46 @@
 /**
- * OfflineIndicator — uses only standard Tailwind
+ * OfflineIndicator.jsx — Feature 8: Sync Status Badge
+ * Shows Online/Offline status + pending sync count from IndexedDB
  */
 import { useState, useEffect } from 'react';
+import { getQueuedRequests } from '../utils/indexedDB';
 
 export default function OfflineIndicator() {
     const [isOnline, setIsOnline] = useState(navigator.onLine);
+    const [pending, setPending] = useState(0);
+
     useEffect(() => {
-        const on = () => setIsOnline(true), off = () => setIsOnline(false);
-        window.addEventListener('online', on); window.addEventListener('offline', off);
-        return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
+        const goOn  = () => setIsOnline(true);
+        const goOff = () => setIsOnline(false);
+        window.addEventListener('online',  goOn);
+        window.addEventListener('offline', goOff);
+        return () => { window.removeEventListener('online', goOn); window.removeEventListener('offline', goOff); };
     }, []);
 
+    useEffect(() => {
+        async function check() {
+            try {
+                const q = await getQueuedRequests();
+                setPending(Array.isArray(q) ? q.length : 0);
+            } catch { setPending(0); }
+        }
+        check();
+        const id = setInterval(check, 10000);
+        return () => clearInterval(id);
+    }, []);
+
+    // Hidden when online and no pending requests
+    if (isOnline && pending === 0) return null;
+
     return (
-        <div className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full border shrink-0 transition-colors ${isOnline
-                ? 'bg-emerald-900/60 text-emerald-400 border-emerald-700'
-                : 'bg-amber-900/60  text-amber-400  border-amber-700'
-            }`}>
-            <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${isOnline ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-            {isOnline ? 'Connected' : 'Offline'}
+        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold border transition-all ${
+            !isOnline
+                ? 'bg-amber-900/40 border-amber-700/60 text-amber-300'
+                : 'bg-sky-900/40 border-sky-700/60 text-sky-300'
+        }`}>
+            <span className={`w-2 h-2 rounded-full ${!isOnline ? 'bg-amber-400 animate-pulse' : 'bg-sky-400'}`} />
+            {!isOnline ? 'Offline' : 'Syncing'}
+            {pending > 0 && <span className="ml-1 bg-white/20 px-1.5 py-0.5 rounded-full">{pending} pending</span>}
         </div>
     );
 }

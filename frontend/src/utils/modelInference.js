@@ -17,19 +17,28 @@ export const analyzeImage = async (imageFile, onProgress) => {
             try {
                 onProgress('Preprocessing image...');
 
-                // 2. Preprocess (Resize, Crop, Normalize, Blur Check)
+                // ── Feature 1: Validate on ORIGINAL image BEFORE resizing ──────────
+                // Draw the original image onto a validation canvas (max 400px, preserving aspect)
+                const VSIZE = 400;
+                const vScale = Math.min(1, VSIZE / Math.max(img.width, img.height));
+                const vW = Math.round(img.width * vScale);
+                const vH = Math.round(img.height * vScale);
+                const vCanvas = document.createElement('canvas');
+                vCanvas.width = vW;
+                vCanvas.height = vH;
+                const vCtx = vCanvas.getContext('2d');
+                vCtx.drawImage(img, 0, 0, vW, vH);
+                const validationImageData = vCtx.getImageData(0, 0, vW, vH);
+
+                const vResult = validateFundusImage(validationImageData);
+                if (vResult.warnings?.length > 0)
+                    vResult.warnings.forEach(w => onProgress('⚠ ' + w));
+
+                // 2. Preprocess for ONNX (resize to 224×224, normalize)
                 const { tensorData, blurScore, imageData } = preprocessImageForONNX(img);
 
-                // 2.5 Heuristic OOD Validation
-                // This will throw if the image is obviously not a fundus photograph
-                validateFundusImage(imageData);
-
-                // 3. Reject if blurry (threshold < 100 typically means out of focus)
-                // For hackathon demo, we log but allow passing if it fails slightly OR we strictly enforce
-                if (blurScore < 50) { // Set lower for broader demo acceptance
-                    URL.revokeObjectURL(url);
-                    throw new Error('Image quality too low (blurry). Please retake the photo.');
-                }
+                // Warn about blur but don't block — demo images may be slightly soft
+                if (blurScore < 20) onProgress('⚠ Blurry image detected — results may be less accurate.');
 
                 // 4. Send to Web Worker for non-blocking inference
                 // Worker ensures heavy ONNX compute doesn't freeze the React UI

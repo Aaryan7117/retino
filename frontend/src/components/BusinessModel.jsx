@@ -1,9 +1,62 @@
 /**
- * BusinessModel.jsx
- * Section 9: Business Model Pitch Page
- * Provides a glossy, presentation-ready overview of the project's commercial viability.
+ * BusinessModel.jsx — Feature 10: Revenue Calculator added
  */
-import React from 'react';
+import React, { useState } from 'react';
+
+// ── Feature 10: Revenue Calculator ───────────────────────────────────────────
+function RevenueCalc() {
+    const [scans, setScans] = useState(200);
+    const [camps, setCamps] = useState(10);
+    const [days,  setDays]  = useState(20);
+    const COST_MONTH = 150000;
+
+    const monthlyRev    = scans * camps * days * 10;
+    const annualRev     = monthlyRev * 12;
+    const monthlyProfit = monthlyRev - COST_MONTH;
+
+    const fmt = v => v >= 1e7 ? `₹${(v/1e7).toFixed(1)}Cr` : v >= 1e5 ? `₹${(v/1e5).toFixed(1)}L` : `₹${(v/1000).toFixed(1)}K`;
+
+    const Slider = ({ label, value, setValue, min, max, step, unit }) => (
+        <div className="space-y-1">
+            <div className="flex justify-between text-sm">
+                <span className="text-slate-400 font-bold">{label}</span>
+                <span className="text-white font-black">{value} {unit}</span>
+            </div>
+            <input type="range" min={min} max={max} step={step} value={value}
+                onChange={e => setValue(Number(e.target.value))}
+                className="w-full accent-violet-500 cursor-pointer" />
+        </div>
+    );
+
+    return (
+        <div className="card-elevated relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-40 h-40 bg-violet-600/10 rounded-full blur-3xl -mr-10 -mt-10" />
+            <h3 className="text-2xl font-black text-white mb-6 flex items-center gap-3">
+                <span className="p-2 bg-violet-900/40 text-violet-400 rounded-xl">🧮</span> Revenue Calculator
+            </h3>
+            <div className="space-y-5">
+                <Slider label="Scans per Camp / Day" value={scans} setValue={setScans} min={50}  max={500}  step={25} unit="scans" />
+                <Slider label="Active Camps"          value={camps} setValue={setCamps} min={1}   max={5000} step={1}  unit="camps" />
+                <Slider label="Camp Days / Month"     value={days}  setValue={setDays}  min={5}   max={30}   step={1}  unit="days"  />
+            </div>
+            <div className="grid grid-cols-3 gap-3 mt-6">
+                {[
+                    { label: 'Monthly Revenue', val: fmt(monthlyRev),    color: 'text-blue-400' },
+                    { label: 'Annual Revenue',  val: fmt(annualRev),     color: 'text-emerald-400' },
+                    { label: 'Monthly Profit',  val: fmt(monthlyProfit), color: monthlyProfit >= 0 ? 'text-emerald-400' : 'text-red-400' },
+                ].map(({ label, val, color }) => (
+                    <div key={label} className="bg-slate-900/60 rounded-xl border border-slate-700 p-3 text-center">
+                        <div className={`text-xl font-black ${color}`}>{val}</div>
+                        <div className="text-xs text-slate-500 font-bold mt-1">{label}</div>
+                    </div>
+                ))}
+            </div>
+            <p className="text-xs text-slate-600 mt-3 italic text-center">
+                Assumes ₹10/scan revenue · ₹1.5L/month fixed costs
+            </p>
+        </div>
+    );
+}
 
 export default function BusinessModel() {
     return (
@@ -104,33 +157,21 @@ export default function BusinessModel() {
                         <span className="p-2 bg-violet-900/40 text-violet-400 rounded-xl">⚡</span> The Moat
                     </h3>
                     <div className="space-y-5">
-                        <div>
-                            <div className="flex justify-between text-sm mb-1.5">
-                                <span className="font-bold text-slate-300">Offline-First Execution</span>
-                                <span className="text-violet-400 font-mono">WebAssembly</span>
+                        {[
+                            { label: 'Offline-First Execution',   sub: 'WebAssembly'  },
+                            { label: 'Zero-Data Liability',       sub: 'Local Compute' },
+                            { label: 'Multilingual Accessibility', sub: 'Any Language' },
+                        ].map(({ label, sub }) => (
+                            <div key={label}>
+                                <div className="flex justify-between text-sm mb-1.5">
+                                    <span className="font-bold text-slate-300">{label}</span>
+                                    <span className="text-violet-400 font-mono">{sub}</span>
+                                </div>
+                                <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
+                                    <div className="h-full bg-violet-500 w-[100%]"></div>
+                                </div>
                             </div>
-                            <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
-                                <div className="h-full bg-violet-500 w-[100%]"></div>
-                            </div>
-                        </div>
-                        <div>
-                            <div className="flex justify-between text-sm mb-1.5">
-                                <span className="font-bold text-slate-300">Zero-Data Liability</span>
-                                <span className="text-violet-400 font-mono">Local Compute</span>
-                            </div>
-                            <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
-                                <div className="h-full bg-violet-500 w-[100%]"></div>
-                            </div>
-                        </div>
-                        <div>
-                            <div className="flex justify-between text-sm mb-1.5">
-                                <span className="font-bold text-slate-300">Multilingual Accessibility</span>
-                                <span className="text-violet-400 font-mono">Any Language</span>
-                            </div>
-                            <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
-                                <div className="h-full bg-violet-500 w-[100%]"></div>
-                            </div>
-                        </div>
+                        ))}
                     </div>
                 </div>
 
@@ -157,6 +198,9 @@ export default function BusinessModel() {
                 </div>
 
             </div>
+
+            {/* Feature 10: Revenue Calculator */}
+            <RevenueCalc />
         </div>
     );
 }

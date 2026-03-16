@@ -1,0 +1,1345 @@
+=== PAGE 1 ===
+RetinaScan AI
+Implementation Guide
+Dual-Eye · Split Heatmap · Auto Camera · 14 Features
+Based on your exact codebase · Vibe Prompts + Manual Instructions
+HOW TO READ THIS PDF:
+GREEN blocks = exact text to copy-paste into Cursor, Claude, or Copilot.
+AMBER blocks = steps you must do yourself (no AI can do these).
+Blue/grey blocks = reference code from your existing files, for context.
+Every prompt references your real file names and real function names. Nothing has been invented — this is built on
+your actual code.
+WHO DOES WHAT:
+YOU (manual)
+VIBE TOOL (AI writes code)
+• Open the camera (getUserMedia) — browser, no code
+needed • Test each feature on your actual device after each
+step • Run npm run dev to verify no errors after each paste •
+Place trained .onnx files in frontend/public/models/ • Create
+free accounts: Supabase, Kaggle, Roboflow • Get API keys
+for Supabase and paste into .env • Approve camera
+permission on device during demo
+• All new component files (.jsx) • All new utility files (.js) • All
+changes to existing files • CSS / TailwindCSS styling •
+IndexedDB schema upgrades • App.jsx route additions •
+Everything in the GREEN blocks below
+MASTER CONTEXT — Paste at the start of every session:
+You are helping me add features to my existing RetinaScan AI project.
+RULES — strictly follow:
+1. NEVER delete or rewrite existing code. Only ADD.
+2. Use exact existing variable names, function names, and import paths.
+3. Write COMPLETE code. No TODOs. No '// rest stays same'.
+4. After each change, tell me: which lines in which file to add/replace.
+EXISTING STRUCTURE:
+frontend/src/
+  App.jsx              — React Router, nav bar, PWA install button
+  index.css            — global styles (.card-elevated, .btn-primary, .grade-pill etc.)
+
+=== PAGE 2 ===
+  components/
+    Dashboard.jsx       — home stats, live IndexedDB polling every 5s
+    Scanner.jsx         — patient form + image upload + calls analyzeImage()
+    ResultsView.jsx     — shows grade, heatmap toggle, action buttons
+    CampDashboard.jsx   — animated stats, donut chart, patient table, view modal
+    YoloResultsPage.jsx — lesion map with colored bounding boxes overlay
+    PDFGenerator.jsx    — button that calls generatePDF() from utils/pdfReport.js
+    VoiceGuide.jsx      — multilingual TTS, play/pause/stop, word highlight
+    ABDMIntegration.jsx — ABHA ID modal, 14-digit validator, API call + fallback
+    ValidationMetrics.jsx — static metrics: accuracy/sensitivity/specificity
+    BusinessModel.jsx   — TAM, revenue model, ecosystem cards
+    OfflineIndicator.jsx — network badge (Connected / Offline)
+    HeatmapOverlay.jsx  — overlays heatmap on original image
+  utils/
+    modelInference.js   — analyzeImage(file, onProgress): starts Web Worker,
+                          returns {grade,diagnosis,confidence,risk_level,
+                          urgency,heatmapBlob,heatmapUrl,yoloDetections,
+                          risk_score,grade_label,imageQuality}
+    imagePreprocessing.js — preprocessImageForONNX(img)->Float32Array[1,3,224,224]
+                            validateFundusImage(imageData) — throws on fail
+                            calculateBlur(imageData)->number
+    model.worker.js     — Web Worker: loads both ONNX models, runs inference,
+                          generateHeatmap(imageData)->Blob [CURRENTLY FAKE]
+                          ONNX models: retina_model.onnx + yolo_lesions.onnx
+    indexedDB.js        — DB: RetinaScanDB v3
+                          stores: patients (keyPath:id, idx:date/grade) + sync_queue
+                          exports: savePatient, getAllPatients, getPatientById,
+                                   deletePatient, enqueueRequest, getQueuedRequests,
+                                   flushSyncQueue, clearAllData
+    pdfReport.js        — generatePDF({patient,result,imagePreview})
+                          2-page jsPDF report with QR code via qrGenerator.js
+    voiceAssistant.js   — Web Speech API + gTTS fallback, 6 Indian languages
+    registerSW.js       — vite-plugin-pwa service worker registration
+    qrGenerator.js      — QR code generation helper
+AI MODELS (ONNX):
+  retina_model.onnx  — EfficientNetB3
+    input:  'input' float32[1,3,224,224]  (ImageNet mean/std normalized)
+    output: 'logits' float32[1,5] + 'feature_map' float32[1,1536,7,7]
+  yolo_lesions.onnx  — YOLOv8
+    input:  float32[1,3,640,640] (normalized 0-1)
+    output: [1,7,8400] (cx,cy,w,h, conf_class0, conf_class1, conf_class2)
+EXISTING GLOBALS IN model.worker.js:
+  gradingSession  — InferenceSession for retina_model.onnx
+  yoloSession     — InferenceSession for yolo_lesions.onnx
+  tensorData      — Float32Array of preprocessed image
+  maxIdx          — predicted grade index (0-4)
+TECH STACK: React 19, Vite, TailwindCSS v3, React Router v7,
+ONNX Runtime Web, idb, jsPDF, html2canvas, workbox
+
+=== PAGE 3 ===
+FEATURE IMPLEMENTATION ORDER
+#
+Feature
+Who
+Priority
+A
+Dual-Eye Scanner — Right Eye + Left Eye, side-by-side
+VIBE
+CRITICAL
+B
+Split-View Draggable Heatmap (real Score-CAM)
+VIBE
+CRITICAL
+C
+Auto Retina-Detect Camera — finds fundus, auto-captures
+VIBE
+HIGH
+1
+Better Image Validator — 5-step fundus check in imagePreprocessing.js
+VIBE
+HIGH
+2
+Softmax Confidence Chart — all 5 grade probs in ResultsView.jsx
+VIBE
+HIGH
+3
+WhatsApp Share — after PDF generated in PDFGenerator.jsx
+VIBE
+HIGH
+4
+Doctor Review Portal — /doctor hidden route
+VIBE
+HIGH
+5
+Patient History Chart — longitudinal SVG in ResultsView.jsx
+VIBE
+MEDIUM
+6
+Camp CSV Export — button in CampDashboard.jsx header
+VIBE
+MEDIUM
+7
+Audit Log — new IndexedDB store, display in CampDashboard.jsx
+VIBE
+MEDIUM
+8
+Sync Status Badge — upgrade OfflineIndicator.jsx
+VIBE
+LOW
+9
+Judge Q&A; Page — /qa accordion, 10 prepared answers
+VIBE
+CRITICAL
+10
+Revenue Calculator — interactive slider in BusinessModel.jsx
+VIBE
+MEDIUM
+11
+App.jsx — wire all new routes + footer links
+VIBE
+REQUIRED
+
+=== PAGE 4 ===
+FEATURE A — Dual-Eye Scanner
+Right Eye (OD) + Left Eye (OS) · Like AEYE Health · Differentiates from all 9 competing teams
+Why this matters:
+DR presents asymmetrically — a patient can have Grade 1 in the right eye and Grade 3 in the left. Scanning only one eye
+misses this. Every certified DR screening system (AEYE Health, IDx-DR, Eyenuk) scans both eyes. This single feature
+separates your project from every other team in the hackathon.
+What changes in your existing code:
+File
+What Changes
+Scanner.jsx
+Add dual-eye tab UI, EyeUploadZone sub-component, handleDualScan(). The existing
+patient form (name, age, gender etc.) stays 100% unchanged.
+ResultsView.jsx
+Add EyeResultCard sub-component. Show two cards side-by-side. The existing
+navigate('/results', {state}) pattern stays the same.
+indexedDB.js
+Patient record now has rightEye:{} and leftEye:{} sub-objects. The existing savePatient()
+and getAllPatients() functions stay unchanged.
+model.worker.js
+No changes needed — analyzeImage() is called twice, once per eye.
+pdfReport.js
+Add a 3rd page: left eye details. Pages 1+2 stay exactly as they are.
+ VIBE TOOL DOES THIS: Write ALL the code below. You just copy-paste the prompt.
+TASK: Upgrade Scanner.jsx for dual-eye scanning. Keep the existing patient form
+(all fields: name, age, gender, diabeticSince, contact, campName) 100% unchanged.
+Only replace the upload zone section and the submit logic.
+=== NEW STATE (add to existing state variables) ===
+const [rightEye, setRightEye] = useState(null);  // {file, preview}
+const [leftEye, setLeftEye]   = useState(null);  // {file, preview} — optional
+const [activeEye, setActiveEye] = useState('right');
+=== NEW EyeUploadZone COMPONENT (add above Scanner function, in same file) ===
+function EyeUploadZone({ label, eyeKey, current, onSet, onClear }) {
+  const ref = useRef(null);
+  if (current) return (
+    <div className='relative rounded-xl overflow-hidden border border-slate-700'>
+      <img src={current.preview} className='w-full aspect-square object-cover'/>
+      <span className='absolute top-2 left-2 bg-blue-600 text-white text-xs
+        font-bold px-2 py-0.5 rounded'>{label}</span>
+      <button onClick={onClear} className='absolute top-2 right-2 w-6 h-6
+        bg-slate-900/80 text-white rounded-full text-xs'>x</button>
+      <div className='absolute bottom-2 left-2 bg-emerald-600 text-white
+        text-xs px-2 py-0.5 rounded font-bold'>Ready</div>
+    </div>
+  );
+  return (
+    <div className='border-2 border-dashed border-slate-600 rounded-xl p-5 text-center
+      hover:border-blue-500 transition-colors'>
+      <div className='text-slate-400 text-sm font-bold mb-1'>{label}</div>
+      <div className='text-slate-500 text-xs mb-3'>Fundus photograph</div>
+
+=== PAGE 5 ===
+      <div className='flex gap-2 justify-center'>
+        <button onClick={() => ref.current?.click()}
+          className='btn-secondary text-xs px-3 py-1.5'>Upload</button>
+        <button onClick={() => onSet('camera')}
+          className='btn-secondary text-xs px-3 py-1.5'>Camera</button>
+      </div>
+      <input ref={ref} type='file' accept='image/*' className='hidden'
+        onChange={e => {
+          const f = e.target.files[0]; if (!f) return;
+          onSet({ file: f, preview: URL.createObjectURL(f) });
+        }}/>
+    </div>
+  );
+}
+=== REPLACE the existing upload zone JSX with this ===
+{/* Eye selector tabs */}
+<div className='flex gap-1 p-1 bg-slate-900 rounded-xl mb-4'>
+  {[['right','Right Eye (OD)'],['left','Left Eye (OS)']].map(([eye,lbl]) => (
+    <button key={eye} onClick={() => setActiveEye(eye)}
+      className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${
+        activeEye === eye
+        ? 'bg-blue-600 text-white shadow'
+        : 'text-slate-400 hover:text-slate-200'}`}>
+      {lbl}
+      {eye==='right' && rightEye && <span className='ml-1 text-emerald-400 text-xs'></span>}
+      {eye==='left'  && leftEye  && <span className='ml-1 text-emerald-400 text-xs'></span>}
+      {eye==='left'  && !leftEye && <span className='ml-1 text-slate-600 text-xs'>(optional)</span>}
+    </button>
+  ))}
+</div>
+{/* Upload zone for active eye */}
+{activeEye === 'right' ? (
+  <EyeUploadZone label='Right Eye (OD)' eyeKey='right'
+    current={rightEye}
+    onSet={(v) => v === 'camera' ? setShowCamera('right') : setRightEye(v)}
+    onClear={() => setRightEye(null)}/>
+) : (
+  <EyeUploadZone label='Left Eye (OS)' eyeKey='left'
+    current={leftEye}
+    onSet={(v) => v === 'camera' ? setShowCamera('left') : setLeftEye(v)}
+    onClear={() => setLeftEye(null)}/>
+)}
+{/* Both-eye preview when both captured */}
+{rightEye && leftEye && (
+  <div className='grid grid-cols-2 gap-2 mt-3'>
+    <div className='relative'>
+      <img src={rightEye.preview} className='w-full rounded-lg aspect-square object-cover'/>
+      <span className='absolute top-1 left-1 bg-blue-600 text-white text-xs
+        px-1.5 py-0.5 rounded font-bold'>OD</span>
+    </div>
+    <div className='relative'>
+      <img src={leftEye.preview} className='w-full rounded-lg aspect-square object-cover'/>
+      <span className='absolute top-1 left-1 bg-violet-600 text-white text-xs
+        px-1.5 py-0.5 rounded font-bold'>OS</span>
+    </div>
+  </div>
+)}
+
+=== PAGE 6 ===
+=== REPLACE the existing handleAnalyze / submit logic ===
+const handleScan = async () => {
+  if (!rightEye || isAnalyzing) return;
+  setIsAnalyzing(true); setError('');
+  try {
+    // Right eye inference (uses existing analyzeImage from modelInference.js)
+    setProgress('Scanning Right Eye (OD)...');
+    const rightResult = await analyzeImage(rightEye.file,
+      (msg) => setProgress(msg));
+    // Left eye inference (optional)
+    let leftResult = null;
+    if (leftEye) {
+      setProgress('Scanning Left Eye (OS)...');
+      leftResult = await analyzeImage(leftEye.file,
+        (msg) => setProgress(msg));
+    }
+    // Overall grade = worst of both eyes
+    const overallGrade = leftResult
+      ? Math.max(rightResult.grade, leftResult.grade)
+      : rightResult.grade;
+    const record = {
+      ...patientData,  // spread all existing patient form fields
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2),
+      timestamp: Date.now(),
+      grade: overallGrade,
+      diagnosis: rightResult.diagnosis,
+      confidence: rightResult.confidence,
+      risk: overallGrade >= 3 ? 'HIGH' : overallGrade >= 2 ? 'MEDIUM' : 'LOW',
+      risk_level: overallGrade >= 3 ? 'HIGH' : overallGrade >= 2 ? 'MEDIUM' : 'LOW',
+      urgency: rightResult.urgency,
+      // Dual-eye sub-objects
+      rightEye: {
+        grade: rightResult.grade,
+        grade_label: rightResult.grade_label,
+        diagnosis: rightResult.diagnosis,
+        confidence: rightResult.confidence,
+        class_probabilities: rightResult.class_probabilities || [],
+        heatmap_url: rightResult.heatmapUrl,
+        image_url: rightEye.preview,
+        yoloDetections: rightResult.yoloDetections,
+        imageQuality: rightResult.imageQuality || 'Sufficient Image Quality',
+      },
+      leftEye: leftResult ? {
+        grade: leftResult.grade,
+        grade_label: leftResult.grade_label,
+        diagnosis: leftResult.diagnosis,
+        confidence: leftResult.confidence,
+        class_probabilities: leftResult.class_probabilities || [],
+        heatmap_url: leftResult.heatmapUrl,
+        image_url: leftEye.preview,
+        yoloDetections: leftResult.yoloDetections,
+        imageQuality: leftResult.imageQuality || 'Sufficient Image Quality',
+      } : null,
+    };
+    await savePatient(record);  // existing savePatient from indexedDB.js
+    navigate('/results', { state: { record } });
+  } catch (err) {
+
+=== PAGE 7 ===
+    setError(err.message || 'Scan failed. Please try again.');
+  } finally {
+    setIsAnalyzing(false); setProgress('');
+  }
+};
+=== UPDATE ResultsView.jsx — dual eye display ===
+After the existing overall-grade summary card, insert this before action buttons:
+<div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
+  <EyeResultCard label='Right Eye (OD)' accent='blue' data={record.rightEye}/>
+  {record.leftEye
+    ? <EyeResultCard label='Left Eye (OS)' accent='violet' data={record.leftEye}/>
+    : <div className='card-elevated flex items-center justify-center
+        text-slate-600 text-sm italic border-dashed border-2 border-slate-800'>
+        Left eye not scanned
+      </div>
+  }
+</div>
+Define EyeResultCard at the top of ResultsView.jsx (not a separate file):
+const GRADE_LABELS = ['No DR','Mild DR','Moderate DR','Severe DR','Proliferative DR'];
+const GRADE_C = ['text-emerald-400','text-yellow-400','text-orange-400',
+                 'text-red-400','text-pink-400'];
+function EyeResultCard({ label, accent, data }) {
+  const ACCENT = { blue:'border-blue-600 bg-blue-950/20',
+                   violet:'border-violet-600 bg-violet-950/20' };
+  return (
+    <div className={`card-elevated border-t-4 space-y-3 ${ACCENT[accent]}`}>
+      <div className='flex justify-between items-start'>
+        <h3 className='text-white font-black text-base'>{label}</h3>
+        <span className={`grade-pill grade-${data.grade}`}>
+          Grade {data.grade}
+        </span>
+      </div>
+      <p className={`text-2xl font-black ${GRADE_C[data.grade]}`}>
+        {(data.confidence * 100).toFixed(1)}%
+      </p>
+      <p className='text-sm text-slate-300'>{data.diagnosis}</p>
+      <p className='text-xs text-slate-500'>Quality: {data.imageQuality}</p>
+      {/* SplitHeatmapView is implemented in Feature B */}
+      {data.heatmap_url && (
+        <SplitHeatmapView
+          originalUrl={data.image_url}
+          heatmapUrl={data.heatmap_url}
+        />
+      )}
+    </div>
+  );
+}
+
+=== PAGE 8 ===
+FEATURE B — Split-View Heatmap + Real Score-CAM
+Draggable divider · Original left / Heatmap right · Replaces fake red circle in model.worker.js
+Two parts to this feature:
+Part B1
+Replace the fake generateHeatmap() in model.worker.js with real Score-CAM. Uses the feature_map output
+already coming from your ONNX model.
+Part B2
+New component SplitHeatmapView.jsx — the draggable split display. Called inside EyeResultCard (Feature A)
+for each eye.
+I YOU DO THIS MANUALLY: If your retina_model.onnx has NOT been trained on APTOS 2019 data yet (it is using default
+ImageNet weights), Score-CAM will produce a weak heatmap because the model's features are not tuned for retinas. The
+component will still work — just run demo with a real retina image and the heatmap will show some attention even on
+untrained weights. For the hackathon demo, this is acceptable. For production, train the model on APTOS 2019 first.
+=== PART B1: Replace generateHeatmap in model.worker.js ===
+Find this existing function:
+  function generateHeatmap(imageData) { ... }  // the fake red circle
+Replace the ENTIRE function body with:
+async function generateScoreCAM(imageData, featureMapData, session, predClass, tensorData) {
+  // featureMapData: Float32Array from ONNX feature_map output [1,1536,7,7]
+  const C=1536, FH=7, FW=7;
+  const iH=imageData.height, iW=imageData.width;
+  // Step 1: Pick 48 highest-activation channels (fast, covers >95% of signal)
+  const means = [];
+  for (let c=0; c<C; c++) {
+    let s=0;
+    for (let i=0; i<FH*FW; i++) s += Math.abs(featureMapData[c*FH*FW+i]);
+    means.push({ c, v: s/(FH*FW) });
+  }
+  means.sort((a,b) => b.v - a.v);
+  const topCh = means.slice(0, 48).map(x => x.c);
+  // Step 2: Bilinear upsample 7x7 -> iH x iW
+  function upsample(m7) {
+    const out = new Float32Array(iH * iW);
+    for (let y=0; y<iH; y++) for (let x=0; x<iW; x++) {
+      const fy=(y/iH)*(FH-1), fx=(x/iW)*(FW-1);
+      const y0=Math.floor(fy), y1=Math.min(y0+1,FH-1);
+      const x0=Math.floor(fx), x1=Math.min(x0+1,FW-1);
+      const dy=fy-y0, dx=fx-x0;
+      out[y*iW+x] = m7[y0*FW+x0]*(1-dy)*(1-dx) + m7[y0*FW+x1]*(1-dy)*dx
+                  + m7[y1*FW+x0]*dy*(1-dx)     + m7[y1*FW+x1]*dy*dx;
+    }
+    return out;
+  }
+  // Step 3: Baseline score
+  const baseT = new ort.Tensor('float32', new Float32Array(tensorData), [1,3,iH,iW]);
+  const baseR = await session.run({ input: baseT });
+  const baseScore = baseR.logits.data[predClass];
+  // Step 4: Accumulate CAM
+
+=== PAGE 9 ===
+  const cam = new Float32Array(iH * iW).fill(0);
+  for (let ci=0; ci<topCh.length; ci++) {
+    const c = topCh[ci];
+    if (ci % 8 === 0)
+      self.postMessage({ type:'STATUS', message:`Heatmap ${ci}/${topCh.length}` });
+    const raw = featureMapData.slice(c*FH*FW, (c+1)*FH*FW);
+    const mn=Math.min(...raw), mx=Math.max(...raw), rng=mx-mn+1e-8;
+    const up = upsample(raw.map(v => (v-mn)/rng));
+    const masked = new Float32Array(3*iH*iW);
+    for (let ch=0; ch<3; ch++)
+      for (let i=0; i<iH*iW; i++)
+        masked[ch*iH*iW+i] = tensorData[ch*iH*iW+i] * up[i];
+    const mR = await session.run({ input: new ort.Tensor('float32',masked,[1,3,iH,iW]) });
+    const w = Math.max(0, mR.logits.data[predClass] - baseScore);
+    for (let i=0; i<iH*iW; i++) cam[i] += w * up[i];
+  }
+  // Step 5: Normalize + JET colormap + blend
+  const cMin=Math.min(...cam), cMax=Math.max(...cam), cR=cMax-cMin+1e-8;
+  const nCam = cam.map(v => (v-cMin)/cR);
+  function jet(t) {
+    return [
+      Math.round(Math.min(1,Math.max(0,1.5-Math.abs(4*t-3)))*255),
+      Math.round(Math.min(1,Math.max(0,1.5-Math.abs(4*t-2)))*255),
+      Math.round(Math.min(1,Math.max(0,1.5-Math.abs(4*t-1)))*255),
+    ];
+  }
+  const canvas = new OffscreenCanvas(iW, iH);
+  const ctx = canvas.getContext('2d');
+  ctx.putImageData(imageData, 0, 0);
+  const orig = ctx.getImageData(0, 0, iW, iH);
+  const out = new Uint8ClampedArray(orig.data.length);
+  for (let i=0; i<iH*iW; i++) {
+    const [hr,hg,hb] = jet(nCam[i]);
+    out[i*4]   = Math.round(orig.data[i*4]   * 0.55 + hr * 0.45);
+    out[i*4+1] = Math.round(orig.data[i*4+1] * 0.55 + hg * 0.45);
+    out[i*4+2] = Math.round(orig.data[i*4+2] * 0.55 + hb * 0.45);
+    out[i*4+3] = 255;
+  }
+  ctx.putImageData(new ImageData(out, iW, iH), 0, 0);
+  return canvas.convertToBlob({ type:'image/jpeg', quality:0.88 });
+}
+Then find where generateHeatmap(imageData) is CALLED in the worker and replace:
+  // OLD:
+  const heatmapBlob = generateHeatmap(imageData);
+  // NEW:
+  const heatmapBlob = await generateScoreCAM(
+    imageData,
+    resGrade.feature_map.data,  // Float32Array from ONNX
+    gradingSession,
+    maxIdx,
+    tensorData
+  );
+=== PART B2: Create src/components/SplitHeatmapView.jsx ===
+
+=== PAGE 10 ===
+import { useState, useRef, useEffect, useCallback } from 'react';
+export default function SplitHeatmapView({ originalUrl, heatmapUrl }) {
+  const containerRef = useRef(null);
+  const [pos, setPos] = useState(50);       // split position 0-100%
+  const [dragging, setDragging] = useState(false);
+  const move = useCallback((clientX) => {
+    if (!containerRef.current) return;
+    const r = containerRef.current.getBoundingClientRect();
+    setPos(Math.min(100, Math.max(0, ((clientX - r.left) / r.width) * 100)));
+  }, []);
+  useEffect(() => {
+    const up  = () => setDragging(false);
+    const mv  = (e) => { if (dragging) move(e.touches ? e.touches[0].clientX : e.clientX); };
+    window.addEventListener('mousemove', mv);
+    window.addEventListener('mouseup', up);
+    window.addEventListener('touchmove', mv, { passive: true });
+    window.addEventListener('touchend', up);
+    return () => {
+      window.removeEventListener('mousemove', mv);
+      window.removeEventListener('mouseup', up);
+      window.removeEventListener('touchmove', mv);
+      window.removeEventListener('touchend', up);
+    };
+  }, [dragging, move]);
+  return (
+    <div className='space-y-1'>
+      <div className='flex justify-between text-xs text-slate-500 font-bold'>
+        <span>Original</span><span>Drag to compare</span><span>AI Heatmap</span>
+      </div>
+      <div
+        ref={containerRef}
+        className='relative w-full aspect-square rounded-xl overflow-hidden
+          bg-slate-950 border border-slate-700 cursor-col-resize select-none'
+        onMouseDown={e => { setDragging(true); move(e.clientX); }}
+        onTouchStart={e => { setDragging(true); move(e.touches[0].clientX); }}
+      >
+        {/* Original — clipped on the right */}
+        <img src={originalUrl} alt='Original'
+          className='absolute inset-0 w-full h-full object-cover'
+          style={{ clipPath: `inset(0 ${100-pos}% 0 0)` }}
+          draggable={false}/>
+        {/* Heatmap — clipped on the left */}
+        <img src={heatmapUrl} alt='Heatmap'
+          className='absolute inset-0 w-full h-full object-cover'
+          style={{ clipPath: `inset(0 0 0 ${pos}%)` }}
+          draggable={false}/>
+        {/* Divider line */}
+        <div className='absolute top-0 bottom-0 w-px bg-white/90'
+          style={{ left: `${pos}%`, transform: 'translateX(-50%)' }}>
+          {/* Handle */}
+          <div className='absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
+            w-8 h-8 rounded-full bg-teal-500 border-2 border-white shadow-xl
+            flex items-center justify-center pointer-events-none'>
+            <svg viewBox='0 0 16 16' className='w-4 h-4 text-white fill-current'>
+              <path d='M5 3l-3 5 3 5V3zm6 0v10l3-5-3-5z'/>
+            </svg>
+          </div>
+        </div>
+
+=== PAGE 11 ===
+        {/* Labels */}
+        <span className='absolute top-2 left-2 bg-black/60 text-white
+          text-xs font-bold px-2 py-0.5 rounded pointer-events-none'>Original</span>
+        <span className='absolute top-2 right-2 bg-black/60 text-teal-300
+          text-xs font-bold px-2 py-0.5 rounded pointer-events-none'>AI Heatmap</span>
+      </div>
+      <p className='text-xs text-slate-600 italic text-center'>
+        Red/orange = high AI attention · Drag the divider to compare
+      </p>
+    </div>
+  );
+}
+
+=== PAGE 12 ===
+FEATURE C — Auto Retina-Detect Camera
+Real-time fundus detection · Auto-captures when steady · No button needed
+How the detection works (simple):
+Every 200ms, a frame from the live video is drawn onto a hidden canvas. Three pixel-level checks run on the centre 40%
+of the frame: (1) red channel > blue channel — fundus images are warm/orange, (2) centre region is brighter than corner
+pixels — the fundus disc is lighter than the dark border, (3) pixel variance > 200 — the image is sharp, not blurry. When
+all three pass for 8 consecutive frames (1.6 seconds), a green ring glows and the photo captures automatically. A manual
+shutter button is always visible as fallback.
+I YOU DO THIS MANUALLY: After implementation: test on your actual device. Point the camera at different objects (face,
+wall, document) — the ring should stay white/grey and NOT trigger. Then point at a retinal fundus image printed on paper or
+shown on another screen. The ring should turn yellow then green. If it triggers on a face, reduce the thresholds in the code
+(increase avgCorner check from 15 to 25). Tell vibe tool to adjust those numbers.
+TASK: Create two files.
+=== FILE 1: src/utils/cameraCapture.js (new file) ===
+export async function startCamera(videoEl, facingMode = 'environment') {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode, width: { ideal: 1920 }, height: { ideal: 1920 } }
+    });
+    videoEl.srcObject = stream;
+    await videoEl.play();
+    return stream;
+  } catch (e) {
+    if (e.name === 'NotAllowedError') throw new Error('Camera permission denied. Please allow camera access in browser
+    if (e.name === 'NotFoundError')  throw new Error('No camera found on this device.');
+    throw new Error('Camera error: ' + e.message);
+  }
+}
+export function captureFrame(videoEl) {
+  const c = document.createElement('canvas');
+  c.width = videoEl.videoWidth;
+  c.height = videoEl.videoHeight;
+  c.getContext('2d').drawImage(videoEl, 0, 0);
+  const previewUrl = c.toDataURL('image/jpeg', 0.92);
+  return new Promise(resolve =>
+    c.toBlob(blob =>
+      resolve({ file: new File([blob], 'retina_capture.jpg', { type: 'image/jpeg' }), previewUrl }),
+    'image/jpeg', 0.92)
+  );
+}
+export function stopCamera(stream) {
+  stream?.getTracks().forEach(t => t.stop());
+}
+=== FILE 2: src/components/AutoRetinaCam.jsx (new file) ===
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { startCamera, captureFrame, stopCamera } from '../utils/cameraCapture';
+// Props: { eyeLabel: string, onCapture(file, previewUrl): void, onCancel(): void }
+
+=== PAGE 13 ===
+export default function AutoRetinaCam({ eyeLabel, onCapture, onCancel }) {
+  const videoRef   = useRef(null);
+  const canvasRef  = useRef(null);
+  const streamRef  = useRef(null);
+  const steadyRef  = useRef(0);
+  const doneRef    = useRef(false);
+  const [status,   setStatus]   = useState('searching');
+  const [pct,      setPct]      = useState(0);
+  const [facing,   setFacing]   = useState('environment');
+  // Analysis runs every 200ms
+  const analyse = useCallback(() => {
+    const v = videoRef.current, c = canvasRef.current;
+    if (!v || !c || doneRef.current) return;
+    const W = v.videoWidth, H = v.videoHeight;
+    if (!W || !H) return;
+    c.width = W; c.height = H;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(v, 0, 0);
+    // Centre 40% region
+    const cx=Math.floor(W*0.3), cy=Math.floor(H*0.3);
+    const cw=Math.floor(W*0.4), ch=Math.floor(H*0.4);
+    const d = ctx.getImageData(cx, cy, cw, ch).data;
+    let rS=0, bS=0, brS=0, n=0;
+    for (let i=0; i<d.length; i+=4) {
+      rS+=d[i]; bS+=d[i+2];
+      brS+=(d[i]+d[i+1]+d[i+2])/3;
+      n++;
+    }
+    const avgR=rS/n, avgB=bS/n, avgBr=brS/n;
+    // Corner brightness
+    const co = ctx.getImageData(0,0,Math.floor(W*0.1),Math.floor(H*0.1)).data;
+    let cBr=0, cN=0;
+    for (let i=0; i<co.length; i+=4) { cBr+=(co[i]+co[i+1]+co[i+2])/3; cN++; }
+    const avgCo = cBr/cN;
+    // Sharpness (variance)
+    let gM=0; const gs=[];
+    for (let i=0; i<d.length; i+=4) {
+      const g=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2]; gs.push(g); gM+=g;
+    }
+    gM/=gs.length;
+    const vr=gs.reduce((s,v)=>s+(v-gM)**2,0)/gs.length;
+    const ok = avgR>avgB*1.05 && avgBr>40 && avgBr>avgCo+15 && vr>200;
+    if (ok) {
+      steadyRef.current = Math.min(steadyRef.current+1, 8);
+    } else {
+      steadyRef.current = Math.max(0, steadyRef.current-2);
+    }
+    const p = Math.round((steadyRef.current/8)*100);
+    setPct(p);
+    setStatus(p>=100 ? 'capturing' : p>0 ? 'detected' : 'searching');
+    if (steadyRef.current >= 8 && !doneRef.current) {
+      doneRef.current = true;
+      setTimeout(async () => {
+        const { file, previewUrl } = await captureFrame(videoRef.current);
+
+=== PAGE 14 ===
+        stopCamera(streamRef.current);
+        onCapture(file, previewUrl);
+      }, 200);
+    }
+  }, [onCapture]);
+  useEffect(() => { const id=setInterval(analyse,200); return()=>clearInterval(id); }, [analyse]);
+  useEffect(() => {
+    startCamera(videoRef.current, facing)
+      .then(s => { streamRef.current=s; })
+      .catch(() => setStatus('error'));
+    return () => stopCamera(streamRef.current);
+  }, [facing]);
+  const RING = status==='capturing' ? 'border-emerald-400 shadow-[0_0_24px_rgba(52,211,153,0.7)]'
+             : status==='detected'  ? 'border-yellow-400  shadow-[0_0_20px_rgba(250,204,21,0.5)]'
+             : 'border-white/30';
+  return (
+    <div className='fixed inset-0 z-50 bg-black flex flex-col'>
+      <canvas ref={canvasRef} className='hidden'/>
+      {/* Top bar */}
+      <div className='absolute top-0 inset-x-0 z-10 flex justify-between items-center
+        px-4 py-3 bg-gradient-to-b from-black/80 to-transparent'>
+        <button onClick={() => { stopCamera(streamRef.current); onCancel(); }}
+          className='w-10 h-10 rounded-full bg-black/50 text-white text-lg
+            flex items-center justify-center'></button>
+        <span className='text-white font-bold text-sm'>{eyeLabel}</span>
+        <button onClick={() => setFacing(f => f==='environment'?'user':'environment')}
+          className='w-10 h-10 rounded-full bg-black/50 text-white
+            flex items-center justify-center text-lg'>I</button>
+      </div>
+      {/* Video */}
+      <video ref={videoRef} autoPlay playsInline
+        className='absolute inset-0 w-full h-full object-cover'/>
+      {/* Targeting ring */}
+      <div className='absolute inset-0 flex items-center justify-center pointer-events-none'>
+        <div className={`w-56 h-56 rounded-full border-4 transition-all duration-300 ${RING}`}/>
+        {pct > 0 && (
+          <svg className='absolute w-64 h-64' viewBox='0 0 100 100'>
+            <circle cx='50' cy='50' r='46' fill='none'
+              stroke='rgba(52,211,153,0.5)' strokeWidth='3'
+              strokeDasharray={`${pct*2.89} ${289}`}
+              strokeLinecap='round' transform='rotate(-90 50 50)'/>
+          </svg>
+        )}
+      </div>
+      {/* Status text */}
+      <div className='absolute bottom-32 inset-x-0 text-center pointer-events-none'>
+        {status==='searching'  && <p className='text-white font-bold drop-shadow'>Point at retina · Auto-captures when
+        {status==='detected'   && <p className='text-yellow-300 font-bold drop-shadow animate-pulse'>Hold steady...</p
+        {status==='capturing'  && <p className='text-emerald-300 font-black drop-shadow text-lg'>Captured!</p>}
+        {status==='error'      && <p className='text-red-400 font-bold text-sm'>Camera unavailable</p>}
+      </div>
+      {/* Manual shutter — always visible */}
+      <div className='absolute bottom-8 inset-x-0 flex justify-center'>
+        <button
+          onClick={async () => {
+            doneRef.current = true;
+            const { file, previewUrl } = await captureFrame(videoRef.current);
+            stopCamera(streamRef.current);
+
+=== PAGE 15 ===
+            onCapture(file, previewUrl);
+          }}
+          className='w-16 h-16 rounded-full bg-white border-4 border-slate-300
+            shadow-xl active:scale-95 transition-transform'>
+          <div className='w-10 h-10 rounded-full bg-slate-800 mx-auto mt-1'/>
+        </button>
+      </div>
+    </div>
+  );
+}
+=== UPDATE Scanner.jsx to use AutoRetinaCam ===
+Add at top of Scanner.jsx:
+  import AutoRetinaCam from './AutoRetinaCam';
+Add state: const [showCamera, setShowCamera] = useState(null); // 'right' | 'left' | null
+Add below the EyeUploadZone render:
+{showCamera && (
+  <AutoRetinaCam
+    eyeLabel={showCamera === 'right' ? 'Right Eye (OD)' : 'Left Eye (OS)'}
+    onCapture={(file, preview) => {
+      if (showCamera === 'right') setRightEye({ file, preview });
+      else setLeftEye({ file, preview });
+      setShowCamera(null);
+    }}
+    onCancel={() => setShowCamera(null)}
+  />
+)}
+
+=== PAGE 16 ===
+FEATURES 1–4 — Core Quality Improvements
+Feature 1 — Better Fundus Validator (imagePreprocessing.js)
+Replace validateFundusImage() only. Keep calculateBlur() and preprocessImageForONNX() exactly as they are.
+TASK: In src/utils/imagePreprocessing.js, replace ONLY the validateFundusImage function body.
+Keep the existing function signature: export const validateFundusImage = (imageData) => {
+  const { width: W, height: H, data: D } = imageData;
+  const warnings = [];
+  // 1. Minimum resolution
+  if (W < 250 || H < 250)
+    throw new Error('Image too small. Minimum 250x250px required for fundus analysis.');
+  // 2. Aspect ratio (fundus is roughly square)
+  if (W/H > 2.2 || W/H < 0.45)
+    throw new Error('Image shape incorrect. Fundus photographs are roughly square.');
+  // 3. Region brightness helper
+  const rb = (x0, y0, x1, y1) => {
+    let s=0, n=0;
+    for (let y=y0; y<y1; y++)
+      for (let x=x0; x<x1; x++) {
+        const i=(y*W+x)*4;
+        s += (D[i]+D[i+1]+D[i+2])/3; n++;
+      }
+    return n ? s/n : 0;
+  };
+  // 4. Corner darkness (fundus has dark circular border)
+  const cw=Math.floor(W*0.08), ch=Math.floor(H*0.08);
+  const corners=[
+    rb(0,0,cw,ch), rb(W-cw,0,W,ch),
+    rb(0,H-ch,cw,H), rb(W-cw,H-ch,W,H)
+  ];
+  if (corners.every(c => c > 155))
+    throw new Error('Not a fundus photograph — image has bright corners. Fundus images have dark circular borders.');
+  // 5. Centre brightness vs corners
+  const cBright = rb(Math.floor(W*0.35), Math.floor(H*0.35),
+                     Math.floor(W*0.65), Math.floor(H*0.65));
+  const avgCorner = corners.reduce((a,b)=>a+b,0)/4;
+  if (cBright < 30) throw new Error('Image too dark. Ensure adequate illumination.');
+  if (cBright < avgCorner + 10) warnings.push('Uneven lighting detected.');
+  // 6. Colour profile (fundus is warm/orange)
+  let rS=0, bS=0, n=0;
+  for (let i=0; i<D.length; i+=16) { rS+=D[i]; bS+=D[i+2]; n++; }
+  if (bS > rS*1.4) warnings.push('Unusual colour — fundus images have warm orange tones.');
+  // 7. Blank/flat rejection
+  let gS=0, gSq=0, gN=0;
+  for (let i=0; i<D.length; i+=4) {
+    const b=(D[i]+D[i+1]+D[i+2])/3; gS+=b; gSq+=b*b; gN++;
+  }
+  const gMn=gS/gN, gVar=gSq/gN-gMn*gMn;
+  if (gMn>240 && gVar<50) throw new Error('Image appears blank or pure white.');
+  if (gVar<8) throw new Error('Flat solid colour — not a retinal photograph.');
+
+=== PAGE 17 ===
+  return { valid: true, warnings };
+};
+ALSO update modelInference.js — find: validateFundusImage(imageData);
+Replace with:
+  const vResult = validateFundusImage(imageData);
+  if (vResult.warnings?.length > 0)
+    vResult.warnings.forEach(w => onProgress('Warning: ' + w));
+Feature 2 — All-Grade Confidence Chart (model.worker.js + ResultsView.jsx)
+Adds softmax probabilities for all 5 grades. A borderline 55%/40% result shows a warning, preventing silent false
+negatives.
+TASK: Two small changes.
+CHANGE 1 — In model.worker.js, find the block that computes maxIdx.
+After it, ADD these lines (do not remove anything):
+  const logArr = Array.from(logits);
+  const maxL   = Math.max(...logArr);
+  const exps   = logArr.map(l => Math.exp(l - maxL));
+  const sumE   = exps.reduce((a,b) => a+b, 0);
+  const class_probabilities = exps.map(e => parseFloat((e/sumE).toFixed(4)));
+Then add class_probabilities to the result object in the postMessage call.
+CHANGE 2 — In ResultsView.jsx, add this component above the main component:
+function GradeProbChart({ probs }) {
+  const LBL  = ['No DR','Mild DR','Moderate DR','Severe DR','Proliferative'];
+  const BARS = ['bg-emerald-500','bg-yellow-500','bg-orange-500','bg-red-500','bg-pink-500'];
+  const TXTS = ['text-emerald-400','text-yellow-400','text-orange-400','text-red-400','text-pink-400'];
+  const best = probs.indexOf(Math.max(...probs));
+  return (
+    <div className='card-elevated space-y-2.5'>
+      <p className='section-label'>Grade Probability Distribution</p>
+      {probs.map((prob, i) => (
+        <div key={i}>
+          <div className='flex justify-between text-xs font-bold mb-1'>
+            <span className={i===best ? TXTS[i] : 'text-slate-500'}>
+              {i===best ? 'I ' : ''}{LBL[i]}
+            </span>
+            <span className={i===best ? 'text-white' : 'text-slate-600'}>
+              {(prob*100).toFixed(1)}%
+            </span>
+          </div>
+          <div className='h-2 bg-slate-800 rounded-full overflow-hidden'>
+            <div
+              className={`h-full rounded-full ${BARS[i]} ${i!==best ? 'opacity-40' : ''}`}
+              style={{ width: `${(prob*100).toFixed(1)}%`, transition: 'width 0.6s ease' }}
+            />
+          </div>
+        </div>
+      ))}
+      {Math.max(...probs) < 0.70 && (
+        <p className='text-xs text-amber-400 font-bold pt-1'>
+          I  Confidence below 70% — borderline result. Refer to specialist.
+        </p>
+      )}
+    </div>
+
+=== PAGE 18 ===
+  );
+}
+Then in ResultsView JSX, after the existing clinical summary card, add:
+  {record?.rightEye?.class_probabilities?.length > 0 &&
+    <GradeProbChart probs={record.rightEye.class_probabilities}/>}
+Feature 3 — WhatsApp Share (PDFGenerator.jsx)
+Appears after PDF is generated. Opens WhatsApp with a pre-filled message to patient's contact number.
+TASK: In PDFGenerator.jsx, keep everything existing. Add the following:
+Add state: const [pdfDone, setPdfDone] = useState(false);
+In the existing try block after successful PDF generation, add:
+  setPdfDone(true);
+Add this handler function inside the component:
+  const shareWA = () => {
+    const msg =
+      `*RetinaScan AI Report* — ${new Date().toLocaleDateString('en-IN')}
+`
+      + `Patient: ${patient?.name || 'Patient'}
+`
+      + `Diagnosis: ${result?.grade_label || result?.diagnosis || ''}
+`
+      + `Risk: *${result?.risk_level || ''}*
+`
+      + `Action: ${result?.urgency || 'Consult ophthalmologist'}
+`
+      + `_AI-assisted screening only. Consult a licensed ophthalmologist._`;
+    const ph = (patient?.contact || '').replace(/\D/g, '').slice(-10);
+    const url = ph
+      ? `https://wa.me/91${ph}?text=${encodeURIComponent(msg)}`
+      : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+    window.open(url, '_blank');
+  };
+Add this button immediately after the existing PDF download button:
+  {pdfDone && patient?.contact && (
+    <button onClick={shareWA}
+      className='w-full flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold
+        text-sm text-white bg-[#075E54] hover:bg-[#128C7E] border border-[#25D366]
+        transition-colors'>
+      <svg className='w-4 h-4 shrink-0' viewBox='0 0 24 24' fill='currentColor'>
+        <path d='M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148
+          -.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15
+          -1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018
+          -.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099
+          -.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5
+          -.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297
+          -1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096
+          3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118
+          .571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124
+          -.272-.198-.57-.347z'/>
+      </svg>
+      Share via WhatsApp
+    </button>
+  )}
+
+=== PAGE 19 ===
+Feature 4 — Doctor Review Portal (/doctor)
+Remote ophthalmologist reviews Grade 2+ patients. Can confirm grade, override, or add notes. Stored in a new
+IndexedDB object store. Hidden from main nav.
+TASK: Two parts.
+PART 1 — Update indexedDB.js:
+  Change const DB_VERSION = 3  -->  const DB_VERSION = 4
+  In the upgrade function, add inside the version check:
+    if (oldVersion < 4) {
+      if (!db.objectStoreNames.contains('doctor_reviews')) {
+        db.createObjectStore('doctor_reviews', { keyPath: 'patientId' });
+      }
+    }
+  Add these exports (append to the end of indexedDB.js):
+    export async function saveReview(review) {
+      const db = await getDB();
+      return db.put('doctor_reviews', { ...review, reviewedAt: new Date().toISOString() });
+    }
+    export async function getReview(patientId) {
+      const db = await getDB();
+      return db.get('doctor_reviews', patientId);
+    }
+    export async function getAllReviews() {
+      const db = await getDB();
+      return db.getAll('doctor_reviews');
+    }
+PART 2 — Create src/components/DoctorPortal.jsx:
+  Data source: getAllPatients() filtered by p.grade >= 2 (or p.risk === 'HIGH')
+  On mount and every 30s: reload patients + reviews, merge.
+  Layout:
+    HEADER: 'Doctor Review Portal' · red disclaimer banner
+    3 TABS: 'Urgent (Grade 3-4)' | 'Refer (Grade 2+)' | 'All'
+    STATS ROW: Total flagged | Reviewed | Pending | Avg confidence
+    PATIENT CARDS (2-col grid):
+      Each card:
+        - Name, age, gender, Patient ID (font-mono)
+        - 'X hours ago' from p.timestamp
+        - Grade pill using existing .grade-N CSS class
+        - If p.rightEye: show right eye heatmap <img src={p.rightEye.heatmap_url}/>
+        - If p.leftEye: show left eye heatmap <img src={p.leftEye.heatmap_url}/>
+        - p.diagnosis text
+        - ACTION ROW:
+          a) 'Confirm' (green) -> saveReview({patientId:p.id, confirmed:true, confirmedGrade:p.grade})
+          b) 'Override' (amber) -> select Grade 0-4 -> saveReview({...override:true, confirmedGrade})
+          c) 'Note' (blue) -> textarea maxLength=150 -> saveReview({...note:text})
+        - If already reviewed: green 'Reviewed ' badge top-right
+  In App.jsx add:
+    import DoctorPortal from './components/DoctorPortal';
+    <Route path='/doctor' element={<DoctorPortal/>}/>
+  (Do NOT add to the NAV array — hidden route only)
+  In CampDashboard.jsx at the page bottom, add:
+    <a href='/doctor' className='text-xs text-slate-600 hover:text-red-400 transition-colors'>
+
+=== PAGE 20 ===
+      Doctor Review Portal
+    </a>
+
+=== PAGE 21 ===
+FEATURES 5–8 — Data, Export & Reliability
+Feature 5 — Patient History Chart (ResultsView.jsx)
+If the same patient (matched by contact number) has more than 1 scan in IndexedDB, shows a pure-SVG trend chart. If
+only 1 scan, renders nothing.
+TASK: Create src/components/LongitudinalChart.jsx
+Props: { contact: string }  — patient phone used as persistent ID
+Logic:
+  1. getAllPatients().filter(p => p.contact === contact).sort by timestamp ASC
+  2. If < 2 records: return null
+  3. If >= 2 records: render SVG chart
+SVG chart (viewBox='0 0 400 180', width='100%'):
+  Background rect fill='#0F172A'
+  Y-axis: 5 gridlines at y=30,60,90,120,150 for grades 4,3,2,1,0
+    Labels: fill='#475569', fontSize=9
+    Grade names: Prolif./Severe/Moderate/Mild/None
+  X-axis: scan dates distributed from x=60 to x=380
+    Format as 'Jan 15' style, fill='#475569', fontSize=8
+  Data line: polyline stroke='#3B82F6' strokeWidth=2 fill=none
+    Point coords: x=60+(i/(n-1))*320, y=150-(grade/4)*120
+  Data points: circles r=7, fill by grade:
+    0=#10B981 1=#F59E0B 2=#F97316 3=#EF4444 4=#EC4899
+    Last point: add stroke=white strokeWidth=2
+  Trend indicator (top-right SVG text):
+    last < first: green + '↓ Improving'
+    last > first: red + '↑ Worsening'
+    same: yellow + '= Stable'
+Wrap in: <div className='card-elevated space-y-3'>
+  Title: 'Patient History' + '{n} scans recorded'
+In ResultsView.jsx, add at the bottom of the JSX:
+  import LongitudinalChart from './LongitudinalChart';
+  {record?.contact && <LongitudinalChart contact={record.contact}/>}
+Feature 6 — Camp CSV Export (CampDashboard.jsx)
+TASK: In CampDashboard.jsx, add this function BEFORE the component:
+function exportCSV(patients) {
+  const HDR = ['ID','Name','Age','Gender','Diabetic Yrs','Contact','Overall Grade',
+    'Right Eye Grade','Left Eye Grade','Diagnosis','Confidence%','Risk','Urgency','Scan Time'];
+  const ROWS = patients.map(p => [
+    p.id||'', p.name||'', p.age||'', p.gender||'',
+    p.diabeticSince||0, p.contact||'',
+    p.grade??'',
+    p.rightEye?.grade??'',
+    p.leftEye?.grade??'',
+    (p.diagnosis||'').replace(/,/g,';'),
+    Math.round((p.confidence||0)*100),
+    p.risk||'', (p.urgency||'').replace(/,/g,';'),
+    p.timestamp ? new Date(p.timestamp).toLocaleString('en-IN') : ''
+  ]);
+  const csv = [HDR, ...ROWS].map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+  const a = document.createElement('a');
+
+=== PAGE 22 ===
+  a.href = URL.createObjectURL(new Blob([csv], { type:'text/csv' }));
+  a.download = `RetinaScan_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+}
+In the CampDashboard JSX, find the header row with the 'Live Updates' badge.
+Add this button in the same row:
+  <button onClick={() => exportCSV(patients)} disabled={!patients.length}
+    className='flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm font-bold
+      bg-emerald-950/60 border border-emerald-800/60 text-emerald-400
+      hover:bg-emerald-900/60 transition-colors disabled:opacity-40'>
+    <svg className='w-4 h-4' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2}>
+      <path strokeLinecap='round' strokeLinejoin='round'
+        d='M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4'/>
+    </svg>
+    Export CSV
+  </button>
+Feature 7 — Audit Log (indexedDB.js + Scanner.jsx + CampDashboard.jsx)
+TASK: Three small changes.
+CHANGE 1 — indexedDB.js: bump DB_VERSION 4 -> 5
+Add in upgrade handler:
+  if (oldVersion < 5) {
+    if (!db.objectStoreNames.contains('audit_log'))
+      db.createObjectStore('audit_log', { keyPath:'id', autoIncrement:true })
+        .createIndex('ts','ts');
+  }
+Add at end of indexedDB.js:
+  function _devId() {
+    let id = localStorage.getItem('rs_dev_id');
+    if (!id) { id='DEV-'+Math.random().toString(36).slice(2,10).toUpperCase();
+      localStorage.setItem('rs_dev_id', id); }
+    return id;
+  }
+  export async function logAudit(evt) {
+    const db = await getDB();
+    return db.add('audit_log', { ...evt, ts: new Date().toISOString(), device: _devId() });
+  }
+  export async function getAuditLog(n=50) {
+    const db = await getDB();
+    const all = await db.getAll('audit_log');
+    return all.sort((a,b) => new Date(b.ts)-new Date(a.ts)).slice(0,n);
+  }
+CHANGE 2 — Scanner.jsx, after await savePatient(record), add:
+  import { logAudit } from '../utils/indexedDB';
+  // (add to existing imports at top)
+  await logAudit({ type:'SCAN', patientId:record.id,
+    grade:record.grade, confidence:record.confidence });
+CHANGE 3 — CampDashboard.jsx, add collapsible audit section at bottom of JSX:
+  import { getAuditLog } from '../utils/indexedDB';
+  const [auditLog, setAuditLog] = useState([]);
+  const [showAudit, setShowAudit] = useState(false);
+  // In useEffect on mount: getAuditLog(30).then(setAuditLog);
+  <div className='card-elevated mt-6'>
+    <button onClick={() => setShowAudit(s => !s)}
+
+=== PAGE 23 ===
+      className='w-full flex justify-between text-sm font-bold text-slate-400'>
+      <span>Audit Log ({auditLog.length})</span>
+      <span>{showAudit ? 'L' : 'M'}</span>
+    </button>
+    {showAudit && (
+      <table className='data-table w-full mt-3 text-xs'>
+        <thead><tr><th>Time</th><th>Type</th><th>Grade</th><th>Device</th></tr></thead>
+        <tbody>{auditLog.map(e => (
+          <tr key={e.id}>
+            <td className='font-mono'>{new Date(e.ts).toLocaleTimeString('en-IN')}</td>
+            <td>{e.type}</td><td>{e.grade}</td>
+            <td className='font-mono text-slate-500'>{e.device}</td>
+          </tr>
+        ))}</tbody>
+      </table>
+    )}
+  </div>
+Feature 8 — Sync Status Badge (OfflineIndicator.jsx)
+TASK: Replace the full content of OfflineIndicator.jsx with this:
+import { useState, useEffect } from 'react';
+import { getQueuedRequests } from '../utils/indexedDB';
+export default function OfflineIndicator() {
+  const [online, setOnline] = useState(navigator.onLine);
+  const [pending, setPending] = useState(0);
+  useEffect(() => {
+    const on = () => setOnline(true), off = () => setOnline(false);
+    window.addEventListener('online', on);
+    window.addEventListener('offline', off);
+    return () => { window.removeEventListener('online',on); window.removeEventListener('offline',off); };
+  }, []);
+  useEffect(() => {
+    const check = async () => {
+      try { setPending((await getQueuedRequests()).length); } catch { setPending(0); }
+    };
+    check();
+    const id = setInterval(check, 10000);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <div
+      className='flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full border shrink-0'
+      style={{
+        background: online ? 'rgba(6,78,59,0.5)' : 'rgba(78,49,6,0.5)',
+        borderColor: online ? '#047857' : '#92400E'
+      }}
+    >
+      <span className={`w-1.5 h-1.5 rounded-full animate-pulse
+        ${online ? 'bg-emerald-400' : 'bg-amber-400'}`}/>
+      <span style={{ color: online ? '#34D399' : '#FCD34D' }}>
+        {online ? 'Connected' : 'Offline'}
+      </span>
+      {pending > 0 && (
+        <span className='ml-1 bg-amber-500 text-black text-[10px] font-black
+          px-1.5 py-0.5 rounded-full'>
+          {pending} pending
+
+=== PAGE 24 ===
+        </span>
+      )}
+    </div>
+  );
+}
+
+=== PAGE 25 ===
+FEATURES 9–11 — Presentation & Polish
+Feature 9 — Judge Q&A; Page (/qa)
+Hidden route, dark accordion, 10 pre-written answers. Open during demo when a judge asks a hard question. No other
+team will have this prepared.
+TASK: Create src/components/JudgeQA.jsx
+Add <Route path='/qa' element={<JudgeQA/>}/> in App.jsx (hidden, not in NAV)
+const QA = [
+  { cat:'Technical', q:'How does AI run 100% offline?',
+    a:'EfficientNetB3 and YOLOv8 are converted to ONNX format and cached by the service worker '
+     +'on first load. ONNX Runtime Web compiles them to WebAssembly (WASM) at runtime. All '
+     +'inference runs on the device. Retinal images never leave the phone — complete privacy.' },
+  { cat:'Technical', q:'Why do you scan both eyes?',
+    a:'DR presents asymmetrically — one eye can be Grade 1 while the other is Grade 3. '
+     +'Every certified screening system (AEYE Health, IDx-DR, Eyenuk) scans both eyes. '
+     +'Our overall risk grade is the worse of the two eyes.' },
+  { cat:'Technical', q:'What is Score-CAM and why is it better than a plain overlay?',
+    a:'Score-CAM uses the 1,536 feature maps from EfficientNet last layer as image masks, '
+     +'measures how each channel boosts the predicted grade score, and weights them. '
+     +'No backpropagation needed — works in ONNX. Our split-view shows original and heatmap '
+     +'independently, not blended, so doctors can correlate exactly where lesions were found.' },
+  { cat:'Technical', q:'How does auto-retina camera detection work?',
+    a:'Every 200ms: (1) red channel dominates — fundus images are warm/orange, '
+     +'(2) centre brighter than dark border, (3) sharpness variance > 200. '
+     +'Eight consecutive passing frames trigger auto-capture. '
+     +'Manual shutter always visible as fallback.' },
+  { cat:'Medical', q:'Is 94% accuracy enough for a medical device?',
+    a:'This is a triage tool, not a diagnostic device. It answers: does this patient '
+     +'need urgent specialist care? Our 94.2% sensitivity means we correctly flag '
+     +'94 of 100 DR patients. The 6 we miss still get caught at next screening. '
+     +'Compared to the current rural reality of 0% screened, this is transformative.' },
+  { cat:'Medical', q:'What if the AI gives the wrong grade?',
+    a:'Three safeguards: (1) Split heatmap — uncertain cases show diffuse activation '
+     +'instead of sharp lesion focus. (2) Confidence chart — borderline cases get '
+     +'a warning. (3) Doctor Portal — all Grade 2+ cases flag for remote review.' },
+  { cat:'Business', q:'How are you different from Google ARDA or AEYE Health?',
+    a:'AEYE Health and IDx-DR require $10,000-50,000 dedicated fundus cameras plus stable '
+     +'internet. Google ARDA requires a $5,000 Topcon camera plus internet. '
+     +'RetinaScan AI works on a Rs 25,000 clip-on lens, zero internet, dual-eye scan, '
+     +'5 Indian languages, ABDM integration. Rs 10/scan vs Rs 500-2000/scan elsewhere.' },
+  { cat:'Business', q:'Revenue model and path to profitability?',
+    a:'Rs 10/scan licensing (1M scans/year = Rs 1cr ARR). '
+     +'SaaS dashboards for hospital chains at Rs 2,000/month. '
+     +'State government district contracts. Break-even at 50,000 scans/month.' },
+  { cat:'Regulatory', q:'CDSCO regulatory pathway?',
+    a:'Class B Software as Medical Device under Medical Device Rules 2017. '
+     +'Requires: technical documentation, 500-patient clinical study, '
+     +'ISO 13485 quality system. Timeline 12-18 months. '
+     +'Currently operates as a screening tool — lighter burden.' },
+
+=== PAGE 26 ===
+  { cat:'Regulatory', q:'How do you prevent fraudulent use?',
+    a:'Immutable audit log with device fingerprint, timestamp, GPS, worker ID. '
+     +'PDF reports have QR codes with report ID, grade, confidence, date. '
+     +'Doctor Portal requires ophthalmologist confirmation for Grade 2+ cases.' }
+];
+COMPONENT:
+const CATS = ['All','Technical','Medical','Business','Regulatory'];
+const [filter, setFilter] = useState('All');
+const [open, setOpen] = useState(null);
+const shown = filter==='All' ? QA : QA.filter(q => q.cat===filter);
+Layout:
+  Header: 'Judge Q&A Reference' with I icon
+  Subtitle: 'Prepared answers to every difficult question'
+  Filter pills: map over CATS, active=blue selected
+  Accordion items:
+    Question row: small category badge + question text + chevron
+    Answer panel (when open===i):
+      bg-slate-800/50, border-l-2 border-l-blue-600, text-slate-300 text-sm p-4
+  Footer: <a href='/'>Back to Dashboard</a>
+In App.jsx: import JudgeQA from './components/JudgeQA';
+            <Route path='/qa' element={<JudgeQA/>}/>
+Feature 10 — Revenue Calculator (BusinessModel.jsx)
+TASK: In BusinessModel.jsx, ADD this self-contained component at the bottom of the file
+(do not change any existing content):
+function RevenueCalc() {
+  const [spd, setSpd] = useState(100);  // scans/camp/day
+  const [camps, setCamps] = useState(10);
+  const [days, setDays] = useState(20);
+  const mo = spd * camps * days;
+  const rev = mo * 10;  // Rs 10/scan
+  const profit = rev - 50000;  // fixed costs
+  const fmt = n => n >= 10000000 ? `Rs ${(n/10000000).toFixed(1)} Cr`
+    : n >= 100000 ? `Rs ${(n/100000).toFixed(1)}L` : `Rs ${n.toLocaleString('en-IN')}`;
+  return (
+    <div className='card-elevated space-y-5'>
+      <h3 className='text-xl font-black text-white'>Revenue Calculator</h3>
+      <p className='text-slate-400 text-sm'>Adjust sliders to model deployment scenarios.</p>
+      {[{l:'Scans per Camp per Day',v:spd,s:setSpd,mn:10,mx:500,st:10},
+        {l:'Active Camps',v:camps,s:setCamps,mn:1,mx:1000,st:1},
+        {l:'Camp Days per Month',v:days,s:setDays,mn:1,mx:30,st:1}]
+        .map(({l,v,s,mn,mx,st}) => (
+        <div key={l}>
+          <div className='flex justify-between text-sm mb-1.5'>
+            <span className='text-slate-300'>{l}</span>
+            <span className='text-white font-black'>{v.toLocaleString('en-IN')}</span>
+          </div>
+          <input type='range' min={mn} max={mx} step={st} value={v}
+            onChange={e => s(+e.target.value)}
+            className='w-full h-2 bg-slate-700 rounded-full accent-emerald-500 cursor-pointer'/>
+        </div>
+      ))}
+      <div className='grid grid-cols-2 md:grid-cols-4 gap-3 pt-2'>
+        {[['Monthly Scans', mo.toLocaleString('en-IN'),'text-blue-400'],
+          ['Monthly Revenue', fmt(rev), 'text-emerald-400'],
+
+=== PAGE 27 ===
+          ['Annual Revenue', fmt(rev*12), 'text-violet-400'],
+          ['Monthly Profit', fmt(Math.max(0,profit)), profit>0?'text-emerald-400':'text-red-400']
+         ].map(([l,v,c]) => (
+          <div key={l} className='bg-slate-900 rounded-xl p-4 border border-slate-800 text-center'>
+            <div className='text-xs text-slate-500 uppercase font-bold tracking-wider mb-1'>{l}</div>
+            <div className={`text-xl font-black ${c}`}>{v}</div>
+          </div>
+        ))}
+      </div>
+      <p className='text-xs text-slate-600 italic'>@Rs 10/scan. Fixed costs Rs 50,000/month.</p>
+    </div>
+  );
+}
+Then at the bottom of the existing BusinessModel JSX, add: <RevenueCalc/>
+Feature 11 — Wire App.jsx (final step, do last)
+TASK: In App.jsx, add ONLY these items. Keep everything else exactly as is.
+ADD imports (after existing imports):
+  import DoctorPortal from './components/DoctorPortal';
+  import JudgeQA     from './components/JudgeQA';
+  import SplitHeatmapView from './components/SplitHeatmapView';
+ADD routes (after all existing <Route> elements, inside <Routes>):
+  <Route path='/doctor' element={<DoctorPortal/>}/>
+  <Route path='/qa'     element={<JudgeQA/>}/>
+UPDATE the existing footer — find it and add these two links:
+  <a href='/doctor' className='hover:text-red-400 transition-colors text-xs'>Doctor Review</a>
+  <a href='/qa'     className='hover:text-blue-400 transition-colors text-xs'>Judge Q&A</a>
+
+=== PAGE 28 ===
+YOUR MANUAL TASKS — Complete Reference
+These are the only things vibe coding tools cannot do for you. Everything else in this PDF is handled by the
+AI after you paste the prompt.
+Task
+What to do and how
+M1 — Device
+Testing
+After each feature is implemented by the vibe tool, run npm run dev and test on your actual Android
+phone. Open http://your-pc-ip:5173 in Chrome on the phone. Each feature must work on mobile, not just
+desktop. If something breaks, paste the error message to the vibe tool and ask it to fix.
+M2 — Camera
+Permission
+When you open the camera feature for the first time, Chrome will ask for camera permission. You must
+tap 'Allow'. If you accidentally tap 'Block', go to Chrome Settings > Site Settings > Camera > find your
+local URL and reset permission. During the hackathon demo, do this in advance so it does not interrupt
+the presentation.
+M3 — ONNX
+Model Files
+The two AI model files must exist in frontend/public/models/: retina_model.onnx and yolo_lesions.onnx.
+If they do not exist, the app will fall back to demo mode (deterministic results by filename). The demo
+mode is fine for the hackathon if no trained model is available. To get a real trained model: train
+EfficientNetB3 on Kaggle Notebooks using APTOS 2019 dataset (see separate training guide PDF).
+Place the exported .onnx in public/models/.
+M4 — npm install
+After the vibe tool creates or updates package.json, run: npm install Each session where a new package
+is added (e.g., @supabase/supabase-js) you must run this manually. The vibe tool cannot run terminal
+commands.
+M5 — Edge-CAM
+Fallback for Demo
+If your ONNX model is untrained and Score-CAM produces a weak/random heatmap, for the demo only
+use an edge-enhanced fallback. Tell the vibe tool: 'If Score-CAM result is flat (max-min < 0.1), fall back
+to a Sobel edge heatmap.' A Sobel filter highlights vessel edges and lesion boundaries — it looks like a
+real heatmap even without a trained model.
+M6 — IndexedDB
+Version Bump
+Features 4 and 7 both bump the IndexedDB DB_VERSION. If you implement both, the final version
+must be 5 (not 3 or 4). Check indexedDB.js after both features are done and confirm: const
+DB_VERSION = 5 (or higher if you add more stores later). If you see a 'blocked' or 'upgrade needed'
+error in the console, clear the browser storage: DevTools > Application > Storage > Clear site data.
+M7 —
+SplitHeatmapView
+Import
+Feature B creates SplitHeatmapView.jsx. Feature A uses it inside EyeResultCard in ResultsView.jsx.
+Make sure ResultsView.jsx has the import line: import SplitHeatmapView from './SplitHeatmapView'; If
+the vibe tool forgets to add this import, add it manually.
+M8 — Demo
+Preparation
+Before the hackathon: clear all IndexedDB data (DevTools > Application > Clear storage). Add 3-4 test
+patients using real retinal images from Google Images (search 'fundus photograph DR'). This ensures
+CampDashboard shows real data during the demo. Have the /qa page bookmarked and ready to open
+when a judge asks a hard question.
+
+=== PAGE 29 ===
+HACKATHON DIFFERENTIATION STRATEGY
+9+ teams chose DR screening — here is how you win
+Other teams likely
+Your unique feature
+What you say to judges
+Single image upload
+Dual-eye (OD+OS) like AEYE Health
+'We scan both eyes — DR is bilateral. Every certified system does this.'
+Fake or blended heatmap
+Draggable split-view Score-CAM
+'Drag this divider — watch exactly where the AI found the lesion.'
+Manual photo upload
+Auto retina-detect camera
+'No button needed — watch it detect the retina and capture automatically.'
+One confidence number
+5-grade probability bars per eye
+'This patient is 58% Grade2, 37% Grade3 — borderline, needs specialist.'
+No doctor review
+Doctor Portal with grade override
+'If AI is wrong, the ophthalmologist overrides it here remotely.'
+Static business model
+Live revenue calculator
+'Move this slider — see exactly how revenue scales with deployment.'
+No prepared answers
+Judge Q&A page at /qa
+[Open /qa] 'We anticipated this question — here is our answer.'
+DO FEATURES A + B + 9 FIRST — approximately 2.5 hours.
+Feature A (dual-eye) + Feature B (split heatmap) visually distinguish you from every other team the moment judges
+see the interface. Feature 9 (Judge Q&A;) wins the Q&A; round. The remaining features add production-grade depth
+— implement them in order as time allows.
+

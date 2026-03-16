@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, NavLink, Link } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import Dashboard from './components/Dashboard';
 import Scanner from './components/Scanner';
@@ -8,6 +8,8 @@ import OfflineIndicator from './components/OfflineIndicator';
 import BusinessModel from './components/BusinessModel';
 import ValidationMetrics from './components/ValidationMetrics';
 import YoloResultsPage from './components/YoloResultsPage';
+import DoctorPortal from './components/DoctorPortal';
+import JudgeQA from './components/JudgeQA';
 
 // ─── Placeholder for sections not yet implemented ────────────────────────────
 const Placeholder = ({ emoji, title, note }) => (
@@ -135,7 +137,7 @@ export default function App() {
 
         {/* ── Header ─────────────────────────────── */}
         <header className="bg-slate-950 border-b border-slate-800 sticky top-0 z-50 shadow-xl shadow-black/40">
-          <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between gap-3">
+          <div className="max-w-7xl mx-auto px-3 md:px-6 h-14 md:h-16 flex items-center justify-between gap-2">
 
             {/* Logo */}
             <div className="flex items-center gap-3 shrink-0">
@@ -187,9 +189,10 @@ export default function App() {
                 <OfflineIndicator />
               </div>
 
-              {/* Mobile status badge */}
-              <div className="md:hidden">
+              {/* Mobile: status badge + install button + hamburger */}
+              <div className="md:hidden flex items-center gap-1.5">
                 <OfflineIndicator />
+                <InstallButton />
               </div>
 
               {/* Mobile menu toggle */}
@@ -246,16 +249,16 @@ export default function App() {
                 ))}
               </nav>
 
-              <div className="flex items-center justify-between gap-3 pt-2 border-t border-slate-800">
-                <InstallButton />
-                {/* Connection status is already rendered above; keep this layout light */}
+              <div className="pt-2 border-t border-slate-800">
+                {/* Install instruction for users who missed the header button */}
+                <p className="text-xs text-slate-500 text-center pb-1">Tap “Install App” in the header to add to homescreen</p>
               </div>
             </div>
           </div>
         </header>
 
         {/* ── Main ───────────────────────────────── */}
-        <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-8">
+        <main className="flex-1 max-w-7xl w-full mx-auto px-3 py-4 md:px-6 md:py-8">
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/scan" element={<Scanner />} />
@@ -264,14 +267,22 @@ export default function App() {
             <Route path="/business" element={<BusinessModel />} />
             <Route path="/validation" element={<ValidationMetrics />} />
             <Route path="/yolo-results" element={<YoloResultsPage />} />
+            {/* Feature 11: Hidden routes — not in nav */}
+            <Route path="/doctor" element={<DoctorPortal />} />
+            <Route path="/qa" element={<JudgeQA />} />
           </Routes>
         </main>
 
         {/* ── Footer ─────────────────────────────── */}
-        <footer className="border-t border-slate-800 bg-slate-950 py-4">
-          <div className="max-w-7xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-500">
+        <footer className="border-t border-slate-800 bg-slate-950 py-3 md:py-4">
+          <div className="max-w-7xl mx-auto px-3 md:px-6 flex flex-wrap items-center justify-center md:justify-between gap-x-4 gap-y-1 text-xs text-slate-500 text-center">
             <span className="font-semibold">© 2026 RetinaScan AI · Clustrex Hackathon</span>
-            <span className="italic">AI-Assisted Screening — Not a substitute for licensed medical diagnosis</span>
+            <span className="italic hidden md:inline">AI-Assisted Screening — Not a substitute for licensed medical diagnosis</span>
+            {/* Feature 11: Hidden footer links */}
+            <div className="flex gap-4">
+              <Link to="/doctor" className="hover:text-red-400 transition-colors">Doctor Review</Link>
+              <Link to="/qa" className="hover:text-violet-400 transition-colors">Judge Q&amp;A</Link>
+            </div>
           </div>
         </footer>
 

@@ -12,52 +12,58 @@
  * Throws an Error with a user-facing message if the image fails validation.
  */
 export const validateFundusImage = (imageData) => {
-    const { width, height, data } = imageData;
+    const { width: W, height: H, data: D } = imageData;
+    const warnings = [];
 
-    // ── STEP 1: Resolution Check ──────────────────────────────────────
-    // Reject only if the image is extremely small
-    if (width < 200 || height < 200) {
-        throw new Error('Invalid Image: Resolution too low (<200px). Please upload a high-quality retinal scan.');
-    }
+    // 1. Minimum resolution — use original image dims (100px is very safe)
+    if (W < 100 || H < 100)
+        throw new Error('Image too small. Minimum 100×100px required.');
 
-    // Helper: compute mean brightness (0–255) and variance for total image area
-    const getGlobalStats = () => {
-        let sum = 0;
-        let sumSq = 0;
-        const count = width * height;
+    // 2. Aspect ratio (fundus is roughly square; allow wide panoramic 4:1 max)
+    if (W / H > 4.0 || W / H < 0.25)
+        throw new Error('Unusual image shape — is this a fundus photograph?');
 
-        for (let i = 0; i < data.length; i += 4) {
-            const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
-            sum += brightness;
-            sumSq += brightness * brightness;
-        }
-
-        const mean = sum / count;
-        const variance = Math.max(0, (sumSq / count) - (mean * mean));
-        return { mean, variance };
+    // 3. Region brightness helper
+    const rb = (x0, y0, x1, y1) => {
+        let s = 0, n = 0;
+        for (let y = y0; y < y1; y++)
+            for (let x = x0; x < x1; x++) {
+                const i = (y * W + x) * 4;
+                s += (D[i] + D[i + 1] + D[i + 2]) / 3; n++;
+            }
+        return n ? s / n : 0;
     };
 
-    const stats = getGlobalStats();
-    const maxBrightness = 255;
+    // 4. Corner brightness (warn if all corners very bright — likely a document)
+    const cw = Math.max(4, Math.floor(W * 0.08));
+    const ch = Math.max(4, Math.floor(H * 0.08));
+    const corners = [
+        rb(0, 0, cw, ch), rb(W - cw, 0, W, ch),
+        rb(0, H - ch, cw, H), rb(W - cw, H - ch, W, H)
+    ];
+    if (corners.every(c => c > 200))
+        warnings.push('Bright corners detected — verify this is a fundus image.');
 
-    // ── STEP 2: Whiteness Check (>90%) ────────────────────────────────
-    // Reject only if the image is nearly pure white (like a blank document)
-    const whitenessThreshold = 0.9 * maxBrightness; // ~230
-    const isPureWhite = stats.mean > whitenessThreshold;
+    // 5. Centre brightness check (warn only — don't block)
+    const cBright = rb(Math.floor(W * 0.35), Math.floor(H * 0.35),
+        Math.floor(W * 0.65), Math.floor(H * 0.65));
+    if (cBright < 15) warnings.push('Image very dark — check illumination.');
 
-    // ── STEP 3: Ultra-Low Variance (Flat Color) ───────────────────────
-    // Reject only if the image is perfectly uniform (no texture at all)
-    // Real fundus images always have some texture from vessels and gradients.
-    const extremelyLowVariance = 5;
-    const isFlatColor = stats.variance < extremelyLowVariance;
+    // 6. Colour profile warning only
+    let rS = 0, bS = 0, n = 0;
+    for (let i = 0; i < D.length; i += 16) { rS += D[i]; bS += D[i + 2]; n++; }
+    if (bS > rS * 1.6) warnings.push('Unusual colour profile — fundus images are typically warm/orange.');
 
-    // Final Decision: Only block clearly non-retinal "blank" images.
-    // Allow inference to proceed in all other cases.
-    if (isPureWhite || (isFlatColor && stats.mean > 150)) {
-        throw new Error('Invalid Image: Please upload a retinal fundus photograph (eye image from fundus camera). Non-eye content detected.');
+    // 7. Blank/flat rejection (the only hard error besides size)
+    let gS = 0, gSq = 0, gN = 0;
+    for (let i = 0; i < D.length; i += 4) {
+        const b = (D[i] + D[i + 1] + D[i + 2]) / 3; gS += b; gSq += b * b; gN++;
     }
+    const gMn = gS / gN, gVar = gSq / gN - gMn * gMn;
+    if (gMn > 250 && gVar < 10) throw new Error('Image appears blank or completely white.');
+    if (gVar < 3) throw new Error('Uniform solid colour — not a retinal photograph.');
 
-    return true;
+    return { valid: true, warnings };
 };
 
 /**
