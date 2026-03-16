@@ -3,7 +3,7 @@ import cv2
 import numpy as np
 import base64
 from datetime import datetime
-import json
+import random
 
 router = APIRouter()
 
@@ -68,10 +68,8 @@ def get_demo_result(filename: str):
             return data
 
     # Fallback to random grade (for untracked images)
-    import random
-
     g = random.randint(0, 4)
-    data = list(demo_cases.values())[g]
+    data = list(demo_cases.values())[g].copy()
     data["confidence"] = round(random.uniform(0.75, 0.98), 2)
     return data
 
