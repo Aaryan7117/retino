@@ -58,7 +58,7 @@ export default defineConfig({
         screenshots: [],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,onnx,wasm}'],
       },
       devOptions: {
         enabled: false,   // ← Disabled in dev so HMR updates are served fresh
