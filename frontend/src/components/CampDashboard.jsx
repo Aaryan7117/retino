@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { getAllPatients, deletePatient, getAuditLog } from '../utils/indexedDB';
 
 // ── Feature 6: Camp CSV Export ───────────────────────────────────────────────
@@ -28,18 +28,31 @@ function HeatmapOverlay({ heatmapBlob, heatmapUrl, yoloDetections }) {
     const [blobUrl, setBlobUrl] = useState(null);
 
     useEffect(() => {
-        // Support both blob (old single-eye) and direct URL (new dual-eye)
+        // Case 1: Base64 data URL (new records after fix) — works after refresh!
+        if (heatmapUrl && heatmapUrl.startsWith('data:')) {
+            setBlobUrl(heatmapUrl);
+            return;
+        }
+        // Case 2: Legacy blob:// URL (same-session only, may be dead after refresh)
+        if (heatmapUrl && heatmapUrl.startsWith('blob:')) {
+            setBlobUrl(heatmapUrl);
+            return;
+        }
+        // Case 3: Any other heatmapUrl string (fallback)
         if (heatmapUrl) {
             setBlobUrl(heatmapUrl);
             return;
         }
+        // Case 4: Raw Blob object (very old legacy records)
         if (!heatmapBlob) return;
         let url;
         try {
-            url = URL.createObjectURL(heatmapBlob);
-            setBlobUrl(url);
+            if (heatmapBlob instanceof Blob) {
+                url = URL.createObjectURL(heatmapBlob);
+                setBlobUrl(url);
+            }
         } catch (e) {
-            console.error("Failed to create blob URL", e);
+            console.error('HeatmapOverlay: Failed to create blob URL', e);
         }
         return () => {
             if (url) URL.revokeObjectURL(url);
@@ -272,6 +285,8 @@ export default function CampDashboard() {
     // Feature 7: Audit log state
     const [auditLog, setAuditLog] = useState([]);
     const [showAudit, setShowAudit] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [gradeFilter, setGradeFilter] = useState('all'); // 'all' | 'high' | 'refer' | '0'|'1'|'2'|'3'|'4'
 
     async function loadPatients() {
         try {
@@ -308,6 +323,24 @@ export default function CampDashboard() {
     const medium = patients.filter(p => p.risk === 'MEDIUM').length;
     const referrals = high + medium;
     const today = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+    const filteredPatients = useMemo(() => {
+        let result = patients;
+        // Text search
+        if (searchQuery.trim()) {
+            const q = searchQuery.toLowerCase();
+            result = result.filter(p =>
+                (p.name || '').toLowerCase().includes(q) ||
+                (p.id || '').toLowerCase().includes(q) ||
+                (p.diagnosis || '').toLowerCase().includes(q)
+            );
+        }
+        // Grade/risk filter
+        if (gradeFilter === 'high') result = result.filter(p => p.risk === 'HIGH');
+        else if (gradeFilter === 'refer') result = result.filter(p => p.grade >= 2);
+        else if (gradeFilter !== 'all') result = result.filter(p => p.grade === Number(gradeFilter));
+        return result;
+    }, [patients, searchQuery, gradeFilter]);
 
     return (
         <div className="space-y-8">
@@ -355,10 +388,40 @@ export default function CampDashboard() {
                     </span>
                 </div>
 
+                {/* Search and filter controls */}
+                <div className="flex flex-col sm:flex-row gap-3 mb-4">
+                    <div className="relative flex-1">
+                        <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                        <input
+                            type="text"
+                            placeholder="Search by name, ID, or diagnosis..."
+                            value={searchQuery}
+                            onChange={e => setSearchQuery(e.target.value)}
+                            className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl pl-9 pr-4 py-2 focus:outline-none focus:border-blue-500 placeholder-slate-500"
+                        />
+                    </div>
+                    <div className="flex gap-1 flex-wrap">
+                        {[['all','All'],['high','🚨 High'],['refer','⚠ Refer'],].map(([key, label]) => (
+                            <button key={key} onClick={() => setGradeFilter(key)}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${gradeFilter === key ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white border border-slate-700'}`}>
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+                <p className="text-xs text-slate-500 mb-3">
+                    Showing {Math.min(filteredPatients.length, 15)} of {patients.length} patient{patients.length !== 1 ? 's' : ''}
+                    {searchQuery || gradeFilter !== 'all' ? ` (filtered)` : ''}
+                </p>
+
                 {isLoading ? (
                     <p className="text-center text-slate-400 py-12">Loading patient data…</p>
-                ) : patients.length === 0 ? (
-                    <p className="text-center text-slate-400 py-12">No scans recorded yet.</p>
+                ) : filteredPatients.length === 0 ? (
+                    <p className="text-center text-slate-400 py-12">
+                        {searchQuery || gradeFilter !== 'all' ? 'No patients match your search.' : 'No scans recorded yet.'}
+                    </p>
                 ) : (
                     <div className="overflow-x-auto -mx-6">
                         <table className="data-table">
@@ -370,7 +433,7 @@ export default function CampDashboard() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {patients.slice(0, 15).map(p => (
+                                {filteredPatients.slice(0, 15).map(p => (
                                     <PatientRow
                                         key={p.id}
                                         p={p}

@@ -169,3 +169,18 @@ export async function getAuditLog(n = 50) {
     const all = await db.getAll('audit_log');
     return all.sort((a, b) => new Date(b.ts) - new Date(a.ts)).slice(0, n);
 }
+
+/**
+ * Convert a Blob or File to a Base64 data URL string.
+ * Used to persist images in IndexedDB so they survive page refresh.
+ * @param {Blob|File} blobOrFile
+ * @returns {Promise<string>} data:image/jpeg;base64,... string
+ */
+export async function blobToBase64(blobOrFile) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload  = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('blobToBase64: FileReader failed'));
+    reader.readAsDataURL(blobOrFile);
+  });
+}

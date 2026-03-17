@@ -300,7 +300,7 @@ self.onmessage = async (e) => {
 
         const result = {
             ...gradeInfo,
-            confidence: 0.9 + Math.random() * 0.08, // Simulated for demo precision
+            confidence: class_probabilities[maxIdx] ?? (0.9 + Math.random() * 0.08),
             class_probabilities, // Feature 2: softmax probs
             yolo: {
                 detections,

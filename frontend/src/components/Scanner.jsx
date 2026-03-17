@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { analyzeImage } from '../utils/modelInference';
-import { savePatient, logAudit } from '../utils/indexedDB';
+import { savePatient, logAudit, blobToBase64 } from '../utils/indexedDB';
 import AutoRetinaCam from './AutoRetinaCam';
 
 const FIELDS = [
@@ -105,6 +105,15 @@ export default function Scanner() {
                     : Promise.resolve(null),
             ]);
 
+            // Convert heatmap blobs and image files to Base64 for persistent IndexedDB storage
+            // (blob:// URLs die on page refresh — Base64 strings survive forever)
+            const [rightHeatB64, leftHeatB64, rightImgB64, leftImgB64] = await Promise.all([
+                rightResult.heatmapBlob ? blobToBase64(rightResult.heatmapBlob) : Promise.resolve(null),
+                (leftResult && leftResult.heatmapBlob) ? blobToBase64(leftResult.heatmapBlob) : Promise.resolve(null),
+                blobToBase64(rightEye.file),
+                leftEye ? blobToBase64(leftEye.file) : Promise.resolve(null),
+            ]);
+
             // Overall grade = worst of both eyes
             const overallGrade = leftResult
                 ? Math.max(rightResult.grade, leftResult.grade)
@@ -139,8 +148,8 @@ export default function Scanner() {
                     diagnosis: rightResult.diagnosis,
                     confidence: rightResult.confidence,
                     class_probabilities: rightResult.class_probabilities || [],
-                    heatmap_url: rightResult.heatmapUrl || rightResult.heatmap_url,
-                    image_url: rightEye.preview,
+                    heatmap_url: rightHeatB64 || rightResult.heatmapUrl || rightResult.heatmap_url,
+                    image_url: rightImgB64 || rightEye.preview,
                     yoloDetections: rightResult.yoloDetections || rightResult.yolo,
                     imageQuality: rightResult.imageQuality || 'Sufficient Image Quality',
                 },
@@ -150,8 +159,8 @@ export default function Scanner() {
                     diagnosis: leftResult.diagnosis,
                     confidence: leftResult.confidence,
                     class_probabilities: leftResult.class_probabilities || [],
-                    heatmap_url: leftResult.heatmapUrl || leftResult.heatmap_url,
-                    image_url: leftEye.preview,
+                    heatmap_url: leftHeatB64 || leftResult.heatmapUrl || leftResult.heatmap_url,
+                    image_url: leftImgB64 || leftEye.preview,
                     yoloDetections: leftResult.yoloDetections || leftResult.yolo,
                     imageQuality: leftResult.imageQuality || 'Sufficient Image Quality',
                 } : null,
