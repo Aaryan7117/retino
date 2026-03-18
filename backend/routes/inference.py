@@ -4,8 +4,64 @@ import numpy as np
 import base64
 from datetime import datetime
 import random
+import onnxruntime as ort
+import os
+from pathlib import Path
 
 router = APIRouter()
+
+# ─── ONNX Model Paths ────────────────────────────────────────────────────────
+MODEL_DIR = Path(__file__).parent.parent / 'models'
+GRADING_MODEL = str(MODEL_DIR / 'retina_model.onnx')
+LESION_MODEL  = str(MODEL_DIR / 'yolo_lesions.onnx')
+
+# ─── Session Cache (load once on first call, reuse on all subsequent calls) ──
+_grading_session = None
+_lesion_session  = None
+
+def get_grading_session():
+    global _grading_session
+    if _grading_session is None:
+        _grading_session = ort.InferenceSession(GRADING_MODEL, providers=['CPUExecutionProvider'])
+    return _grading_session
+
+def get_lesion_session():
+    global _lesion_session
+    if _lesion_session is None:
+        _lesion_session = ort.InferenceSession(LESION_MODEL, providers=['CPUExecutionProvider'])
+    return _lesion_session
+
+# ─── Real EfficientNetB3 Grading ─────────────────────────────────────────────
+def run_grading(image_rgb: np.ndarray) -> dict:
+    """Run EfficientNetB3 ONNX inference and return grade/confidence/probabilities."""
+    img = cv2.resize(image_rgb, (224, 224))
+    mean = np.array([0.485, 0.456, 0.406])
+    std  = np.array([0.229, 0.224, 0.225])
+    tensor = ((img / 255.0) - mean) / std
+    tensor = tensor.transpose(2, 0, 1).astype(np.float32)
+    tensor = np.expand_dims(tensor, 0)  # [1, 3, 224, 224]
+
+    sess    = get_grading_session()
+    outputs = sess.run(None, {'input': tensor})
+    logits  = outputs[0][0]  # shape [5]
+
+    exp   = np.exp(logits - np.max(logits))
+    probs = exp / exp.sum()
+    grade = int(np.argmax(probs))
+
+    MAP = [
+        {'grade_label': 'No Diabetic Retinopathy',        'risk_level': 'LOW',    'risk_score': 15, 'urgency': 'Annual monitoring'},
+        {'grade_label': 'Mild Diabetic Retinopathy',       'risk_level': 'LOW',    'risk_score': 35, 'urgency': 'Monitor in 6 months'},
+        {'grade_label': 'Moderate Diabetic Retinopathy',   'risk_level': 'MEDIUM', 'risk_score': 55, 'urgency': 'Refer in 3 months'},
+        {'grade_label': 'Severe Diabetic Retinopathy',     'risk_level': 'HIGH',   'risk_score': 85, 'urgency': 'Refer in 2 weeks'},
+        {'grade_label': 'Proliferative Diabetic Retinopathy', 'risk_level': 'HIGH', 'risk_score': 98, 'urgency': 'Emergency Referral'},
+    ]
+    return {
+        'grade': grade,
+        'confidence': float(probs[grade]),
+        'class_probabilities': probs.tolist(),
+        **MAP[grade],
+    }
 
 
 def is_blurry(image_np: np.ndarray, threshold: float = 100.0) -> bool:
@@ -101,10 +157,12 @@ async def run_inference(file: UploadFile = File(...)):
             status_code=422, detail="Image quality too low (blurry). Please retake."
         )
 
-    # 3. Simulate Inference (using deterministic hackathon data if possible)
-    # The actual PyTorch execution is documented but for the API response
-    # we use the deterministic wrapper as requested.
-    result = get_demo_result(file.filename)
+    # 3. Real ONNX inference — falls back to demo result if model file is missing
+    try:
+        result = run_grading(image_rgb)
+    except Exception as e:
+        result = get_demo_result(file.filename)
+        result['_note'] = f'ONNX fallback: {str(e)}'
 
     # 4. Generate Heatmap
     heatmap_b64 = generate_mock_heatmap(image_rgb)

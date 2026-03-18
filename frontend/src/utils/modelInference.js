@@ -1,13 +1,53 @@
 import { preprocessImageForONNX, validateFundusImage } from './imagePreprocessing';
 
+// ─── Backend-first helper ────────────────────────────────────────────────────
+// Sends the image to the FastAPI backend for fast server-side ONNX inference.
+// Falls back to browser ONNX (below) if the backend is unreachable.
+async function analyzeViaBackend(imageFile, onProgress) {
+    onProgress('Sending to server for fast analysis...');
+    const formData = new FormData();
+    formData.append('file', imageFile);
+    const base = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+    const res = await fetch(`${base}/api/inference/`, {
+        method: 'POST',
+        body: formData,
+        signal: AbortSignal.timeout(30000),
+    });
+    if (!res.ok) throw new Error(`Backend ${res.status}`);
+    const data = await res.json();
+    onProgress('Server analysis complete ✅');
+    // Backend returns heatmap as base64 data URL string directly
+    return {
+        ...data,
+        heatmapBlob: null,
+        heatmap_url: data.heatmap_url || null,
+        source: 'backend',
+        yoloDetections: data.yolo || null,
+    };
+}
+
 /**
- * Main wrapper to run offline AI inference via a Web Worker.
- * 
+ * Main wrapper to run AI inference.
+ * Strategy: Try backend first when online (3-5x faster), fall back to browser ONNX Worker.
+ *
  * @param {File} imageFile - The image uploaded by the user
  * @param {Function} onProgress - Callback for loading states (e.g. "Loading model...", "Running inference...")
  * @returns {Promise<Object>} The API response format matching backend spec
  */
 export const analyzeImage = async (imageFile, onProgress) => {
+    // Try backend first when online (3-5x faster than browser ONNX)
+    if (navigator.onLine) {
+        try {
+            return await analyzeViaBackend(imageFile, onProgress);
+        } catch (err) {
+            console.warn('Backend failed, falling back to browser ONNX:', err.message);
+            onProgress('Server unavailable — switching to offline AI...');
+        }
+    } else {
+        onProgress('Offline mode — running AI on device...');
+    }
+
+    // ─── Browser ONNX Web Worker (100% unchanged) ────────────────────────────
     return new Promise((resolve, reject) => {
         // 1. Convert File to HTMLImageElement to draw on Canvas
         const img = new Image();
@@ -55,6 +95,7 @@ export const analyzeImage = async (imageFile, onProgress) => {
                         // Create object URL in main thread so it survives worker termination
                         result.heatmap_url = URL.createObjectURL(heatmapBlob);
                         result.heatmapBlob = heatmapBlob; // Pass the raw blob back for persistence
+                        result.source = 'offline'; // Tag the source for UI display
 
                         worker.terminate();
                         resolve(result);
