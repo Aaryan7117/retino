@@ -110,8 +110,8 @@ export default function Scanner() {
             const [rightHeatB64, leftHeatB64, rightImgB64, leftImgB64] = await Promise.all([
                 rightResult.heatmapBlob ? blobToBase64(rightResult.heatmapBlob) : Promise.resolve(null),
                 (leftResult && leftResult.heatmapBlob) ? blobToBase64(leftResult.heatmapBlob) : Promise.resolve(null),
-                blobToBase64(rightEye.file),
-                leftEye ? blobToBase64(leftEye.file) : Promise.resolve(null),
+                rightEye?.file ? blobToBase64(rightEye.file) : Promise.resolve(null),
+                leftEye?.file  ? blobToBase64(leftEye.file)  : Promise.resolve(null),
             ]);
 
             // Overall grade = worst of both eyes
@@ -150,7 +150,7 @@ export default function Scanner() {
                     class_probabilities: rightResult.class_probabilities || [],
                     heatmap_url: rightHeatB64 || rightResult.heatmapUrl || rightResult.heatmap_url,
                     image_url: rightImgB64 || rightEye.preview,
-                    yoloDetections: rightResult.yoloDetections || rightResult.yolo,
+                    yoloDetections: rightResult.yoloDetections || rightResult.yolo || null,
                     imageQuality: rightResult.imageQuality || 'Sufficient Image Quality',
                 },
                 leftEye: leftResult ? {
@@ -161,7 +161,7 @@ export default function Scanner() {
                     class_probabilities: leftResult.class_probabilities || [],
                     heatmap_url: leftHeatB64 || leftResult.heatmapUrl || leftResult.heatmap_url,
                     image_url: leftImgB64 || leftEye.preview,
-                    yoloDetections: leftResult.yoloDetections || leftResult.yolo,
+                    yoloDetections: leftResult.yoloDetections || leftResult.yolo || null,
                     imageQuality: leftResult.imageQuality || 'Sufficient Image Quality',
                 } : null,
             };

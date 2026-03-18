@@ -5,6 +5,7 @@ import Scanner from './components/Scanner';
 import ResultsView from './components/ResultsView';
 import CampDashboard from './components/CampDashboard';
 import OfflineIndicator from './components/OfflineIndicator';
+import BackendIndicator from './components/BackendIndicator';
 import BusinessModel from './components/BusinessModel';
 import ValidationMetrics from './components/ValidationMetrics';
 import YoloResultsPage from './components/YoloResultsPage';
@@ -186,11 +187,13 @@ export default function App() {
               {/* Desktop Install + Status */}
               <div className="hidden md:flex items-center gap-2">
                 <InstallButton />
+                <BackendIndicator />
                 <OfflineIndicator />
               </div>
 
               {/* Mobile: status badge + install button + hamburger */}
               <div className="md:hidden flex items-center gap-1.5">
+                <BackendIndicator />
                 <OfflineIndicator />
                 <InstallButton />
               </div>

@@ -28,22 +28,22 @@ function HeatmapOverlay({ heatmapBlob, heatmapUrl, yoloDetections }) {
     const [blobUrl, setBlobUrl] = useState(null);
 
     useEffect(() => {
-        // Case 1: Base64 data URL (new records after fix) — works after refresh!
+        // Case 1: base64 data URL (backend result OR new persisted scan) — always works
         if (heatmapUrl && heatmapUrl.startsWith('data:')) {
             setBlobUrl(heatmapUrl);
             return;
         }
-        // Case 2: Legacy blob:// URL (same-session only, may be dead after refresh)
+        // Case 2: blob:// URL (same browser session only)
         if (heatmapUrl && heatmapUrl.startsWith('blob:')) {
             setBlobUrl(heatmapUrl);
             return;
         }
-        // Case 3: Any other heatmapUrl string (fallback)
-        if (heatmapUrl) {
+        // Case 3: any other URL string (http URL from future Supabase storage)
+        if (heatmapUrl && heatmapUrl.startsWith('http')) {
             setBlobUrl(heatmapUrl);
             return;
         }
-        // Case 4: Raw Blob object (very old legacy records)
+        // Case 4: raw Blob object (legacy records only)
         if (!heatmapBlob) return;
         let url;
         try {
@@ -52,11 +52,9 @@ function HeatmapOverlay({ heatmapBlob, heatmapUrl, yoloDetections }) {
                 setBlobUrl(url);
             }
         } catch (e) {
-            console.error('HeatmapOverlay: Failed to create blob URL', e);
+            console.error('HeatmapOverlay: createObjectURL failed', e);
         }
-        return () => {
-            if (url) URL.revokeObjectURL(url);
-        };
+        return () => { if (url) URL.revokeObjectURL(url); };
     }, [heatmapBlob, heatmapUrl]);
 
     if (!blobUrl) return (

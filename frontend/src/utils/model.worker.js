@@ -3,10 +3,12 @@
  * SEPARATE THREAD AI INFERENCE ENGINE
  * Runs EfficientNetB3 for Grading + YOLOv8 for Lesion Mapping entirely offline.
  */
+// Import standard module from node_modules
 import * as ort from 'onnxruntime-web';
 
-// ─── Environment Configuration ──────────────────────────────────────────────
-ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/';
+// Force absolute local path to prevent Vite dev server resolution misses
+ort.env.wasm.wasmPaths = location.origin + '/wasm/';
+ort.env.wasm.numThreads = 1; 
 
 const YOLO_CLASSES = [
     "External Bleeding",
@@ -187,10 +189,11 @@ self.onmessage = async (e) => {
         self.postMessage({ type: 'STATUS', message: 'Initializing AI Models...' });
 
         // Phase 1: Model Loading (Sequential for Memory Stability)
-        const gradingSession = await ort.InferenceSession.create('/models/retina_model.onnx');
+        const options = { executionProviders: ['wasm'] };
+        const gradingSession = await ort.InferenceSession.create('/models/retina_model.onnx', options);
         self.postMessage({ type: 'STATUS', message: 'Grading Model ✅' });
 
-        const lesionSession = await ort.InferenceSession.create('/models/yolo_lesions.onnx');
+        const lesionSession = await ort.InferenceSession.create('/models/yolo_lesions.onnx', options);
         self.postMessage({ type: 'STATUS', message: 'Lesion Model ✅' });
 
         // Phase 2: Severity Grading (EfficientNet)

@@ -100,7 +100,7 @@ const YoloResultsPage = () => {
     const odYolo  = result?.yolo || record?.rightEye?.yoloDetections;
     const osYolo  = record?.leftEye?.yoloDetections;
 
-    if (!odYolo || !odImage) {
+    if (!odImage) {
         return (
             <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
                 <div className="text-center space-y-4">

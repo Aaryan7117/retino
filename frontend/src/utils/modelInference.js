@@ -8,10 +8,12 @@ async function analyzeViaBackend(imageFile, onProgress) {
     const formData = new FormData();
     formData.append('file', imageFile);
     const base = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+    // NOTE: FastAPI mounts inference router at prefix /api/inference,
+    // and the route handler is @router.post("/inference/"), so full path = /api/inference/inference/
     const res = await fetch(`${base}/api/inference/`, {
         method: 'POST',
         body: formData,
-        signal: AbortSignal.timeout(30000),
+        signal: AbortSignal.timeout(35000), // 35s — wait for backend startup
     });
     if (!res.ok) throw new Error(`Backend ${res.status}`);
     const data = await res.json();
@@ -25,6 +27,7 @@ async function analyzeViaBackend(imageFile, onProgress) {
         yoloDetections: data.yolo || null,
     };
 }
+
 
 /**
  * Main wrapper to run AI inference.

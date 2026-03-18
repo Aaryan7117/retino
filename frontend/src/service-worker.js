@@ -8,7 +8,7 @@
  *
  * ISSUE 12: Bump APP_VERSION on redeploy so users get fresh caches and update banner.
  */
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.0.2';
 
 import { clientsClaim } from 'workbox-core';
 import { precacheAndRoute, cleanupOutdatedCaches } from 'workbox-precaching';

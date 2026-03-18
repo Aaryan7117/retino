@@ -16,11 +16,12 @@ app = FastAPI(
 # CORS — allow Vite dev server and Vercel frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "https://*.vercel.app"],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # Register routers
 app.include_router(inference.router, prefix="/api/inference", tags=["Inference"])

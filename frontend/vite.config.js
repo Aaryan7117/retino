@@ -66,5 +66,8 @@ export default defineConfig({
       },
     }),
   ],
+  optimizeDeps: {
+    exclude: ['onnxruntime-web'] // Vital fix: Stops Vite intercepting ONNX local WASM imports
+  }
 });
 
