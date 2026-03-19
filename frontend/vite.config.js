@@ -14,6 +14,7 @@ export default defineConfig({
       injectManifest: {
         // Allow large ONNX / WASM assets without failing the build
         maximumFileSizeToCacheInBytes: 60 * 1024 * 1024,
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,wasm,onnx,mjs}'],
       },
       manifest: {
         name: 'RetinaScan AI',
