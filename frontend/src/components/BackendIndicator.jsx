@@ -30,15 +30,34 @@ export default function BackendIndicator() {
             }
         }
 
+        // Track actual internet connection state
+        function handleOnline() {
+            if (isMounted) checkHealth();
+        }
+        function handleOffline() {
+            if (isMounted) setStatus('disconnected');
+        }
+
+        window.addEventListener('online', handleOnline);
+        window.addEventListener('offline', handleOffline);
+        
         // Initial check
-        checkHealth();
+        if (navigator.onLine) {
+            checkHealth();
+        } else {
+            setStatus('disconnected');
+        }
         
         // Poll every 10 seconds
-        const id = setInterval(checkHealth, 10000);
+        const id = setInterval(() => {
+            if (navigator.onLine) checkHealth();
+        }, 10000);
         
         return () => {
             isMounted = false;
             clearInterval(id);
+            window.removeEventListener('online', handleOnline);
+            window.removeEventListener('offline', handleOffline);
         };
     }, []);
 

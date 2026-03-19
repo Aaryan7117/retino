@@ -8,7 +8,7 @@
  *
  * ISSUE 12: Bump APP_VERSION on redeploy so users get fresh caches and update banner.
  */
-const APP_VERSION = '1.0.2';
+const APP_VERSION = '1.0.3';
 
 import { clientsClaim } from 'workbox-core';
 import { precacheAndRoute, cleanupOutdatedCaches } from 'workbox-precaching';
@@ -84,9 +84,9 @@ registerRoute(
     })
 );
 
-// ─── ONNX model (large binary, cache-first after first download) ───────────────
+// ─── ONNX model & WASM engine (cache-first after first download) ───────────────
 registerRoute(
-    ({ url }) => url.pathname.startsWith('/models/'),
+    ({ url }) => url.pathname.startsWith('/models/') || url.pathname.startsWith('/wasm/'),
     new CacheFirst({
         cacheName: `retinascan-models-${APP_VERSION}`,
         plugins: [

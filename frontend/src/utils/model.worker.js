@@ -317,6 +317,10 @@ self.onmessage = async (e) => {
 
     } catch (err) {
         console.error("Worker Error:", err);
-        self.postMessage({ type: 'ERROR', error: err.message });
+        let errorMsg = err.message;
+        if (errorMsg.toLowerCase().includes('fetch') || errorMsg.toLowerCase().includes('network')) {
+            errorMsg = "Offline models not fully downloaded. Please connect to the internet and run one scan to cache the AI engine.";
+        }
+        self.postMessage({ type: 'ERROR', error: errorMsg });
     }
 };
