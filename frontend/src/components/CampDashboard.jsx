@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { getAllPatients, deletePatient, getAuditLog } from '../utils/indexedDB';
 
-// ── Feature 6: Camp CSV Export ───────────────────────────────────────────────
+// -- Feature 6: Camp CSV Export --
 function exportCSV(patients) {
     const HDR = ['ID', 'Name', 'Age', 'Gender', 'Diabetic Yrs', 'Contact', 'Overall Grade',
         'Right Eye Grade', 'Left Eye Grade', 'Diagnosis', 'Confidence%', 'Risk', 'Urgency', 'Scan Time'];

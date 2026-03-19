@@ -6,7 +6,7 @@ import ABDMIntegration from './ABDMIntegration';
 import SplitHeatmapView from './SplitHeatmapView';
 import LongitudinalChart from './LongitudinalChart';
 import { savePatient } from '../utils/indexedDB';
-
+import { supabase } from '../utils/supabaseClient';
 const GRADE_INFO = [
     { label: 'No Diabetic Retinopathy', cls: 'grade-0', urgency: 'Annual checkup', accent: 'border-l-emerald-500' },
     { label: 'Mild Diabetic Retinopathy', cls: 'grade-1', urgency: 'Monitor in 6 months', accent: 'border-l-yellow-500' },
@@ -18,7 +18,7 @@ const GRADE_INFO = [
 const GRADE_LABELS = ['No DR', 'Mild DR', 'Moderate DR', 'Severe DR', 'Proliferative DR'];
 const GRADE_C = ['text-emerald-400', 'text-yellow-400', 'text-orange-400', 'text-red-400', 'text-pink-400'];
 
-// ── Feature A: Eye Result Card ───────────────────────────────────────────────
+// -- Feature A: Eye Result Card --
 function EyeResultCard({ label, accent, data }) {
     const ACCENT = {
         blue: 'border-blue-600 bg-blue-950/20',
@@ -46,7 +46,7 @@ function EyeResultCard({ label, accent, data }) {
     );
 }
 
-// ── Feature 2: Grade Probability Chart ──────────────────────────────────────
+// -- Feature 2: Grade Probability Chart --
 function GradeProbChart({ probs }) {
     const LBL  = ['No DR', 'Mild DR', 'Moderate DR', 'Severe DR', 'Proliferative'];
     const BARS = ['bg-emerald-500', 'bg-yellow-500', 'bg-orange-500', 'bg-red-500', 'bg-pink-500'];

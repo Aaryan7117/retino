@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
-// ── Bounding-box overlay for one eye ──────────────────────────────────────────
+// -- Bounding-box overlay for one eye --
 function EyeCanvas({ imageUrl, yolo, label, accentClass }) {
     const [showBoxes, setShowBoxes] = useState(true);
 
@@ -85,7 +85,7 @@ function EyeCanvas({ imageUrl, yolo, label, accentClass }) {
     );
 }
 
-// ── Main Page ─────────────────────────────────────────────────────────────────
+// -- Main Page --
 const YoloResultsPage = () => {
     const location = useLocation();
     const navigate = useNavigate();

@@ -11,7 +11,7 @@ const FIELDS = [
     { id: 'contact', label: 'Mobile Number', type: 'tel', col: 2 },
 ];
 
-// ── EyeUploadZone sub-component ─────────────────────────────────────────────
+// -- EyeUploadZone sub-component --────
 function EyeUploadZone({ label, eyeKey, current, onSet, onClear }) {
     const ref = useRef(null);
     if (current) return (
@@ -44,11 +44,11 @@ function EyeUploadZone({ label, eyeKey, current, onSet, onClear }) {
 export default function Scanner() {
     const navigate = useNavigate();
 
-    // ── Legacy single-eye state (kept for existing logic compatibility) ──
+    // -- Legacy single-eye state (kept for existing logic compatibility) --
     const [image, setImage] = useState(null);
     const [preview, setPreview] = useState(null);
 
-    // ── Dual-eye state ───────────────────────────────────────────────────
+    // -- Dual-eye state --
     const [rightEye, setRightEye] = useState(null);  // {file, preview}
     const [leftEye, setLeftEye] = useState(null);    // {file, preview} — optional
     const [activeEye, setActiveEye] = useState('right');
@@ -80,7 +80,7 @@ export default function Scanner() {
         setErrorMsg('');
     };
 
-    // ── NEW: Dual-Eye handleScan (replaces handleAnalyze for dual mode) ──
+    // -- NEW: Dual-Eye handleScan (replaces handleAnalyze for dual mode) --
     const handleScan = async () => {
         if (!rightEye || isAnalyzing) return;
 
@@ -97,7 +97,7 @@ export default function Scanner() {
         try {
             setProgressMsg('🔄 Scanning both eyes simultaneously...');
 
-            // ── Run OD and OS inference in PARALLEL ──────────────────────────
+            // -- Run OD and OS inference in PARALLEL --
             const [rightResult, leftResult] = await Promise.all([
                 analyzeImage(rightEye.file, (msg) => setProgressMsg(`OD: ${msg}`)),
                 leftEye
@@ -184,7 +184,7 @@ export default function Scanner() {
         }
     };
 
-    // ── LEGACY: Single-eye handleAnalyze (untouched, kept for backward compat) ──
+    // -- LEGACY: Single-eye handleAnalyze (untouched, kept for backward compat) --
     const handleAnalyze = async () => {
         if (!image) return;
         if (!patient.name.trim() || !patient.age || !patient.contact.trim()) {

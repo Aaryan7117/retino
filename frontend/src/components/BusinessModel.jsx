@@ -3,7 +3,7 @@
  */
 import React, { useState } from 'react';
 
-// ── Feature 10: Revenue Calculator ───────────────────────────────────────────
+// -- Feature 10: Revenue Calculator --────
 function RevenueCalc() {
     const [scans, setScans] = useState(200);
     const [camps, setCamps] = useState(10);
