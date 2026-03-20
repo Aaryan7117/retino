@@ -114,6 +114,55 @@ export async function savePatient(patientRecord) {
 }
 
 /**
+ * Fetches all past patients from Supabase for the current user and 
+ * saves them locally to IndexedDB. This restores history across 
+ * reinstalls or device changes.
+ * @returns {Promise<void>}
+ */
+export async function syncPatientsFromCloud() {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return; // Not logged in, skip sync
+
+    // Pull users history from cloud
+    const { data: cloudPatients, error } = await supabase
+      .from('patients')
+      .select('*')
+      .eq('user_id', user.id);
+
+    if (error) throw error;
+    if (!cloudPatients || cloudPatients.length === 0) return;
+
+    const db = await getDB();
+    const tx = db.transaction(PATIENTS_STORE, 'readwrite');
+    const store = tx.objectStore(PATIENTS_STORE);
+
+    // Merge them down to local storage
+    for (const cp of cloudPatients) {
+      const localRecord = {
+        id: cp.id.toString(), // Supabase's PK acts as the local IndexedDB key
+        name: cp.name,
+        age: cp.age,
+        gender: cp.gender,
+        diagnosis: cp.diagnosis,
+        grade: cp.grade,
+        confidence: cp.confidence,
+        risk: cp.risk,
+        timestamp: cp.created_at,
+        isFromCloud: true // Marks it as missing massive image blobs
+      };
+      // put() overwrites locally if id matches, otherwise creates new entry
+      await store.put(localRecord);
+    }
+    
+    await tx.done;
+    console.log(`Synced ${cloudPatients.length} patients from Supabase to IndexedDB.`);
+  } catch (err) {
+    console.warn("Cloud sync failed (possibly offline):", err.message);
+  }
+}
+
+/**
  * Retrieves all patient records from local storage.
  * @returns {Promise<Array<Object>>} Array of patient records, newest first.
  */

@@ -16,7 +16,7 @@ import ValidationMetrics from './components/ValidationMetrics';
 import YoloResultsPage from './components/YoloResultsPage';
 
 import { logout } from './utils/auth';
-import { flushSyncQueue } from './utils/indexedDB';
+import { flushSyncQueue, syncPatientsFromCloud } from './utils/indexedDB';
 import { supabase } from './utils/supabaseClient';
 
 /**
@@ -70,6 +70,8 @@ function InstallButton() {
         setIsAlreadyInstalled(true);
         setInstallPrompt(null);
       }
+    } else {
+      alert("To install RetinaScan AI, tap your browser's 'Share' or 'Menu' button and select 'Add to Home Screen'.");
     }
   };
 
@@ -110,11 +112,17 @@ export default function App() {
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       setUserSession(data?.user ?? null);
+      if (data?.user) {
+        syncPatientsFromCloud(); // Restore data on mount
+      }
     });
 
     const { data: authListener } = supabase.auth.onAuthStateChange(
       (_event, session) => {
         setUserSession(session?.user ?? null);
+        if (session?.user) {
+          syncPatientsFromCloud(); // Restore data on login
+        }
       }
     );
 
