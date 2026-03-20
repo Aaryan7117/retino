@@ -1,75 +1,74 @@
-import { useState, useEffect } from 'react';
+// BackendIndicator.jsx — Shows live backend API connectivity status.
+// Uses a periodic health check. Skips polling while a scan is in progress
+// to prevent false-disconnected flashes (backend is busy, not down).
+
+import { useState, useEffect, useRef } from 'react';
 import { getQueuedRequests } from '../utils/indexedDB';
 
+/**
+ * Global flag: set to true while inference is running so the health
+ * check does not time out and flip the indicator to red.
+ */
+export let scanInProgress = false;
+export function setScanInProgress(val) { scanInProgress = val; }
+
 export default function BackendIndicator() {
-    const [status, setStatus] = useState('checking'); // 'checking', 'connected', 'disconnected'
+    const [status, setStatus] = useState('checking');
     const [pendingCount, setPendingCount] = useState(0);
+    const isMounted = useRef(true);
 
     useEffect(() => {
-        let isMounted = true;
-        
+        isMounted.current = true;
+
         async function checkHealth() {
+            // Skip the check while inference is running — backend is busy, not down
+            if (scanInProgress) return;
+
             try {
                 const base = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
-                // Abort request quickly if backend is completely down
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 3000);
-                
+                // 8s timeout: enough for a busy backend but short enough to detect real outages
+                const timeoutId = setTimeout(() => controller.abort(), 8000);
+
                 const res = await fetch(`${base}/health`, { signal: controller.signal });
                 clearTimeout(timeoutId);
-                
-                if (isMounted) {
-                    if (res.ok) {
-                        setStatus('connected');
-                    } else {
-                        setStatus('disconnected');
-                    }
+
+                if (isMounted.current) {
+                    setStatus(res.ok ? 'connected' : 'disconnected');
                 }
-            } catch (err) {
-                if (isMounted) {
-                    setStatus('disconnected');
-                }
+            } catch {
+                if (isMounted.current) setStatus('disconnected');
             }
         }
 
-        // Track actual internet connection state
-        function handleOnline() {
-            if (isMounted) checkHealth();
-        }
-        function handleOffline() {
-            if (isMounted) setStatus('disconnected');
-        }
+        function handleOnline() { if (isMounted.current) checkHealth(); }
+        function handleOffline() { if (isMounted.current) setStatus('disconnected'); }
 
         window.addEventListener('online', handleOnline);
         window.addEventListener('offline', handleOffline);
-        
-        // Initial check
-        if (navigator.onLine) {
-            checkHealth();
-        } else {
-            setStatus('disconnected');
-        }
-        
-        // Poll every 10 seconds
-        const id = setInterval(() => {
-            if (navigator.onLine) checkHealth();
-        }, 10000);
 
-        const badgeId = setInterval(async () => {
+        // Initial check
+        navigator.onLine ? checkHealth() : setStatus('disconnected');
+
+        // Poll every 20s (less aggressive — backend response times can be slow on free tier)
+        const healthInterval = setInterval(() => {
+            if (navigator.onLine) checkHealth();
+        }, 20000);
+
+        // Sync queue badge — every 5s
+        const badgeInterval = setInterval(async () => {
             const queue = await getQueuedRequests();
-            setPendingCount(queue.length);
+            if (isMounted.current) setPendingCount(queue.length);
         }, 5000);
-        
+
         return () => {
-            isMounted = false;
-            clearInterval(id);
-            clearInterval(badgeId);
+            isMounted.current = false;
+            clearInterval(healthInterval);
+            clearInterval(badgeInterval);
             window.removeEventListener('online', handleOnline);
             window.removeEventListener('offline', handleOffline);
         };
     }, []);
-
-
 
     if (status === 'checking') {
         return (
@@ -89,7 +88,6 @@ export default function BackendIndicator() {
         );
     }
 
-    // Disconnected state
     return (
         <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-rose-500/20 bg-rose-500/10 text-xs font-bold text-rose-400 transition-colors" title="Backend Server Disconnected">
             <span className="w-2 h-2 rounded-full bg-rose-500" />
@@ -97,3 +95,4 @@ export default function BackendIndicator() {
         </div>
     );
 }
+

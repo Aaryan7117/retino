@@ -1,6 +1,7 @@
 // modelInference.js — Handles AI inference: tries FastAPI backend first, falls back to browser ONNX Web Worker
 
 import { preprocessImageForONNX, validateFundusImage } from './imagePreprocessing';
+import { setScanInProgress } from '../components/BackendIndicator';
 
 /**
  * Sends the image to the FastAPI backend for fast server-side ONNX inference.
@@ -53,17 +54,20 @@ async function analyzeViaBackend(imageFile, onProgress) {
  * @returns {Promise<Object>} The API response format matching backend spec.
  */
 export const analyzeImage = async (imageFile, onProgress) => {
-    // Try backend first when online (3-5x faster than browser ONNX)
-    if (navigator.onLine) {
-        try {
-            return await analyzeViaBackend(imageFile, onProgress);
-        } catch (err) {
-            console.warn('Backend failed, falling back to browser ONNX:', err.message);
-            onProgress('Server unavailable — switching to offline AI...');
+    // Signal BackendIndicator to pause health polls — backend is busy, not down
+    setScanInProgress(true);
+    try {
+        // Try backend first when online (3-5x faster than browser ONNX)
+        if (navigator.onLine) {
+            try {
+                return await analyzeViaBackend(imageFile, onProgress);
+            } catch (err) {
+                console.warn('Backend failed, falling back to browser ONNX:', err.message);
+                onProgress('Server unavailable — switching to offline AI...');
+            }
+        } else {
+            onProgress('Offline mode — running AI on device...');
         }
-    } else {
-        onProgress('Offline mode — running AI on device...');
-    }
 
     // --- Browser ONNX Web Worker ---
     // We use a Web Worker for on-device inference to ensure the main UI thread 
@@ -154,5 +158,9 @@ export const analyzeImage = async (imageFile, onProgress) => {
 
         img.src = objectUrl;
     });
+    } finally {
+        // Reset flag so health checks resume after scan completes
+        setScanInProgress(false);
+    }
 };
 
