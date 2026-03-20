@@ -1,6 +1,13 @@
+// auth.js — Handles authentication: signUp, login, logout, and getting user session
+
 import { supabase } from './supabaseClient'
 
-// Signup
+/**
+ * Signs up a new user with email and password, and initializes their profile.
+ * @param {string} email - The user's email address.
+ * @param {string} password - The user's desired password.
+ * @returns {Promise<Object>} The authentication data.
+ */
 export async function signUp(email, password) {
   const { data, error } = await supabase.auth.signUp({
     email,
@@ -20,7 +27,12 @@ export async function signUp(email, password) {
   return data
 }
 
-// Login
+/**
+ * Logs in an existing user with email and password.
+ * @param {string} email - The user's email address.
+ * @param {string} password - The user's password.
+ * @returns {Promise<Object>} The authentication data.
+ */
 export async function login(email, password) {
   const { data, error } = await supabase.auth.signInWithPassword({
     email,
@@ -31,13 +43,20 @@ export async function login(email, password) {
   return data
 }
 
-// Logout
+/**
+ * Logs out the current user by ending their session.
+ * @returns {Promise<void>}
+ */
 export async function logout() {
   await supabase.auth.signOut()
 }
 
-// Get current user
+/**
+ * Retrieves the current authenticated user's data.
+ * @returns {Promise<Object|null>} The user data or null if not authenticated.
+ */
 export async function getUser() {
   const { data } = await supabase.auth.getUser()
   return data
 }
+

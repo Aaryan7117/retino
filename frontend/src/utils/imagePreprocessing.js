@@ -1,170 +1,191 @@
+// imagePreprocessing.js — Handles image validation, blur detection, and preprocessing for AI models
+
 /**
  * Heuristic validation to check if an uploaded image is a valid fundus photograph.
  *
  * Runs BEFORE ONNX inference and rejects obvious non-eye content such as
  * certificates, documents, or selfies.
  *
- * Implementation follows the requested three-step validator:
+ * Implementation follows a three-step validator:
  *  1) Corner brightness check
  *  2) Center texture / variance check
  *  3) Soft circularity heuristic (center vs corner brightness)
  *
- * Throws an Error with a user-facing message if the image fails validation.
+ * @param {ImageData} imageData - The raw image data to validate.
+ * @returns {Object} Object containing valid boolean and an array of warnings.
+ * @throws {Error} If the image fails critical validation (too small, blank, or uniform color).
  */
 export const validateFundusImage = (imageData) => {
-    const { width: W, height: H, data: D } = imageData;
-    const warnings = [];
+    const { width: imageWidth, height: imageHeight, data: pixelData } = imageData;
+    const validationWarnings = [];
 
-    // 1. Minimum resolution — use original image dims (100px is very safe)
-    if (W < 100 || H < 100)
+    // 1. Minimum resolution check
+    if (imageWidth < 100 || imageHeight < 100)
         throw new Error('Image too small. Minimum 100×100px required.');
 
-    // 2. Aspect ratio (fundus is roughly square; allow wide panoramic 4:1 max)
-    if (W / H > 4.0 || W / H < 0.25)
+    // 2. Aspect ratio validation (fundus images are typically near-square)
+    if (imageWidth / imageHeight > 4.0 || imageWidth / imageHeight < 0.25)
         throw new Error('Unusual image shape — is this a fundus photograph?');
 
-    // 3. Region brightness helper
-    const rb = (x0, y0, x1, y1) => {
-        let s = 0, n = 0;
+    /**
+     * Helper to calculate average brightness in a rectangular region.
+     */
+    const calculateRegionBrightness = (x0, y0, x1, y1) => {
+        let totalBrightness = 0, pixelCount = 0;
         for (let y = y0; y < y1; y++)
             for (let x = x0; x < x1; x++) {
-                const i = (y * W + x) * 4;
-                s += (D[i] + D[i + 1] + D[i + 2]) / 3; n++;
+                const pixelIndex = (y * imageWidth + x) * 4;
+                totalBrightness += (pixelData[pixelIndex] + pixelData[pixelIndex + 1] + pixelData[pixelIndex + 2]) / 3; 
+                pixelCount++;
             }
-        return n ? s / n : 0;
+        return pixelCount ? totalBrightness / pixelCount : 0;
     };
 
-    // 4. Corner brightness (warn if all corners very bright — likely a document)
-    const cw = Math.max(4, Math.floor(W * 0.08));
-    const ch = Math.max(4, Math.floor(H * 0.08));
-    const corners = [
-        rb(0, 0, cw, ch), rb(W - cw, 0, W, ch),
-        rb(0, H - ch, cw, H), rb(W - cw, H - ch, W, H)
+    // 3. Corner brightness check (Bright corners often indicate a document/certificate)
+    const cornerWidth = Math.max(4, Math.floor(imageWidth * 0.08));
+    const cornerHeight = Math.max(4, Math.floor(imageHeight * 0.08));
+    const cornerBrightnesses = [
+        calculateRegionBrightness(0, 0, cornerWidth, cornerHeight), 
+        calculateRegionBrightness(imageWidth - cornerWidth, 0, imageWidth, cornerHeight),
+        calculateRegionBrightness(0, imageHeight - cornerHeight, cornerWidth, imageHeight), 
+        calculateRegionBrightness(imageWidth - cornerWidth, imageHeight - cornerHeight, imageWidth, imageHeight)
     ];
-    if (corners.every(c => c > 200))
-        warnings.push('Bright corners detected — verify this is a fundus image.');
+    
+    if (cornerBrightnesses.every(brightness => brightness > 200))
+        validationWarnings.push('Bright corners detected — verify this is a fundus image.');
 
-    // 5. Centre brightness check (warn only — don't block)
-    const cBright = rb(Math.floor(W * 0.35), Math.floor(H * 0.35),
-        Math.floor(W * 0.65), Math.floor(H * 0.65));
-    if (cBright < 15) warnings.push('Image very dark — check illumination.');
+    // 4. Centre brightness check
+    const centerBrightness = calculateRegionBrightness(
+        Math.floor(imageWidth * 0.35), Math.floor(imageHeight * 0.35),
+        Math.floor(imageWidth * 0.65), Math.floor(imageHeight * 0.65)
+    );
+    if (centerBrightness < 15) validationWarnings.push('Image very dark — check illumination.');
 
-    // 6. Colour profile warning only
-    let rS = 0, bS = 0, n = 0;
-    for (let i = 0; i < D.length; i += 16) { rS += D[i]; bS += D[i + 2]; n++; }
-    if (bS > rS * 1.6) warnings.push('Unusual colour profile — fundus images are typically warm/orange.');
-
-    // 7. Blank/flat rejection (the only hard error besides size)
-    let gS = 0, gSq = 0, gN = 0;
-    for (let i = 0; i < D.length; i += 4) {
-        const b = (D[i] + D[i + 1] + D[i + 2]) / 3; gS += b; gSq += b * b; gN++;
+    // 5. Colour profile heuristic
+    let redSum = 0, blueSum = 0;
+    for (let i = 0; i < pixelData.length; i += 16) { 
+        redSum += pixelData[i]; 
+        blueSum += pixelData[i + 2]; 
     }
-    const gMn = gS / gN, gVar = gSq / gN - gMn * gMn;
-    if (gMn > 250 && gVar < 10) throw new Error('Image appears blank or completely white.');
-    if (gVar < 3) throw new Error('Uniform solid colour — not a retinal photograph.');
+    if (blueSum > redSum * 1.6) validationWarnings.push('Unusual colour profile — fundus images are typically warm/orange.');
 
-    return { valid: true, warnings };
+    // 6. Blank or solid color rejection
+    let graySum = 0, graySquaredSum = 0, pixelCount = 0;
+    for (let i = 0; i < pixelData.length; i += 4) {
+        const brightness = (pixelData[i] + pixelData[i + 1] + pixelData[i + 2]) / 3; 
+        graySum += brightness; 
+        graySquaredSum += brightness * brightness; 
+        pixelCount++;
+    }
+    const grayMean = graySum / pixelCount;
+    const grayVariance = graySquaredSum / pixelCount - grayMean * grayMean;
+    
+    if (grayMean > 250 && grayVariance < 10) throw new Error('Image appears blank or completely white.');
+    if (grayVariance < 3) throw new Error('Uniform solid colour — not a retinal photograph.');
+
+    return { valid: true, warnings: validationWarnings };
 };
 
 /**
- * A low variance indicates a blurry image (fewer edges).
+ * Calculates the variance of the Laplacian to estimate image blur.
+ * Lower variance indicates fewer edges and a blurrier image.
+ * 
+ * @param {ImageData} imageData - The image data to analyze.
+ * @returns {number} The calculated variance score.
  */
 export const calculateBlur = (imageData) => {
-    const width = imageData.width;
-    const height = imageData.height;
-    const data = imageData.data;
+    const { width, height, data } = imageData;
 
-    // 1. Convert to grayscale
-    const gray = new Float32Array(width * height);
+    // 1. Convert to grayscale manually for performance
+    const grayscaleData = new Float32Array(width * height);
     for (let i = 0; i < data.length; i += 4) {
-        // Standard luminosity formula
-        gray[i / 4] = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+        grayscaleData[i / 4] = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
     }
 
-    // 2. Apply 3x3 Laplacian filter to detect edges
-    // [ 0,  1,  0]
-    // [ 1, -4,  1]
-    // [ 0,  1,  0]
-    let sum = 0;
-    let count = 0;
-    const laplace = new Float32Array(width * height);
+    // 2. Apply 3x3 Laplacian filter
+    let laplaceSum = 0;
+    let laplaceCount = 0;
+    const laplacianData = new Float32Array(width * height);
 
     for (let y = 1; y < height - 1; y++) {
         for (let x = 1; x < width - 1; x++) {
             const idx = y * width + x;
-            const val =
-                gray[(y - 1) * width + x] +
-                gray[(y + 1) * width + x] +
-                gray[y * width + (x - 1)] +
-                gray[y * width + (x + 1)] -
-                4 * gray[idx];
+            const laplaceValue =
+                grayscaleData[(y - 1) * width + x] +
+                grayscaleData[(y + 1) * width + x] +
+                grayscaleData[y * width + (x - 1)] +
+                grayscaleData[y * width + (x + 1)] -
+                4 * grayscaleData[idx];
 
-            laplace[idx] = val;
-            sum += val;
-            count++;
+            laplacianData[idx] = laplaceValue;
+            laplaceSum += laplaceValue;
+            laplaceCount++;
         }
     }
 
-    // 3. Calculate variance (mean of squared differences)
-    const mean = sum / count;
-    let variance = 0;
-    for (let i = 0; i < count; i++) {
-        const diff = laplace[i] - mean;
-        variance += diff * diff;
+    // 3. Calculate variance
+    const laplaceMean = laplaceSum / laplaceCount;
+    let laplaceVariance = 0;
+    for (let i = 0; i < laplaceCount; i++) {
+        const diff = laplacianData[i] - laplaceMean;
+        laplaceVariance += diff * diff;
     }
 
-    return variance / count;
+    return laplaceVariance / laplaceCount;
 };
 
 /**
- * Preprocess image for EfficientNetB3 ONNX inference
- * Resizes, center crops, normalizes with ImageNet stats, and returns a CHW Float32Array.
+ * Preprocesses an image element for EfficientNetB3 ONNX inference.
+ * Performs resizing, center-cropping, blur detection, and normalization.
+ * 
+ * @param {HTMLImageElement} imageElement - The source image element.
+ * @returns {Object} { tensorData: Float32Array, blurScore: number, imageData: ImageData }
  */
 export const preprocessImageForONNX = (imageElement) => {
-    // EfficientNet expected size
-    const SIZE = 224;
+    // CRITICAL: Input must be exactly 224x224px — EfficientNetB3 was trained at this resolution.
+    // Changing this value will silently corrupt inference results.
+    const TARGET_SIZE = 224;
 
-    // 1. Draw to canvas and resize (Cover / Center Crop equivalent)
-    const canvas = document.createElement('canvas');
-    canvas.width = SIZE;
-    canvas.height = SIZE;
-    const ctx = canvas.getContext('2d');
+    const preprocessingCanvas = document.createElement('canvas');
+    preprocessingCanvas.width = TARGET_SIZE;
+    preprocessingCanvas.height = TARGET_SIZE;
+    const preprocessingCtx = preprocessingCanvas.getContext('2d');
 
-    // Calculate crop dimensions to maintain aspect ratio
-    const scale = Math.max(SIZE / imageElement.width, SIZE / imageElement.height);
-    const w = imageElement.width * scale;
-    const h = imageElement.height * scale;
-    const x = (SIZE - w) / 2;
-    const y = (SIZE - h) / 2;
+    // Calculate crop dimensions to maintain aspect ratio (Center Crop)
+    const scaleFactor = Math.max(TARGET_SIZE / imageElement.width, TARGET_SIZE / imageElement.height);
+    const scaledWidth = imageElement.width * scaleFactor;
+    const scaledHeight = imageElement.height * scaleFactor;
+    const offsetX = (TARGET_SIZE - scaledWidth) / 2;
+    const offsetY = (TARGET_SIZE - scaledHeight) / 2;
 
-    ctx.drawImage(imageElement, x, y, w, h);
+    preprocessingCtx.drawImage(imageElement, offsetX, offsetY, scaledWidth, scaledHeight);
 
-    // Get raw pixel data for ONNX CHW transformation
-    const imageData = ctx.getImageData(0, 0, SIZE, SIZE);
-    const data = imageData.data;
+    const imageData = preprocessingCtx.getImageData(0, 0, TARGET_SIZE, TARGET_SIZE);
+    const pixelData = imageData.data;
 
-    // Check blur purely on the visible resized image
+    // Detect blur on the 224x224 input
     const blurScore = calculateBlur(imageData);
 
-    // 2. Normalize and convert to CHW float32 array
-    // ImageNet stats: mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-    const mean = [0.485, 0.456, 0.406];
-    const std = [0.229, 0.224, 0.225];
+    // Normalize using ImageNet statistics: mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+    const imageNetMean = [0.485, 0.456, 0.406];
+    const imageNetStd = [0.229, 0.224, 0.225];
 
-    const float32Data = new Float32Array(3 * SIZE * SIZE); // 3 channels
+    // Prepare CHW (Channels-First) tensor data for ONNX
+    const tensorBuffer = new Float32Array(3 * TARGET_SIZE * TARGET_SIZE);
 
-    for (let i = 0; i < SIZE * SIZE; i++) {
-        // Red
-        float32Data[i] = ((data[i * 4] / 255.0) - mean[0]) / std[0];
-        // Green
-        float32Data[i + (SIZE * SIZE)] = ((data[i * 4 + 1] / 255.0) - mean[1]) / std[1];
-        // Blue
-        float32Data[i + (2 * SIZE * SIZE)] = ((data[i * 4 + 2] / 255.0) - mean[2]) / std[2];
+    for (let i = 0; i < TARGET_SIZE * TARGET_SIZE; i++) {
+        // Red channel
+        tensorBuffer[i] = ((pixelData[i * 4] / 255.0) - imageNetMean[0]) / imageNetStd[0];
+        // Green channel
+        tensorBuffer[i + (TARGET_SIZE * TARGET_SIZE)] = ((pixelData[i * 4 + 1] / 255.0) - imageNetMean[1]) / imageNetStd[1];
+        // Blue channel
+        tensorBuffer[i + (2 * TARGET_SIZE * TARGET_SIZE)] = ((pixelData[i * 4 + 2] / 255.0) - imageNetMean[2]) / imageNetStd[2];
     }
 
     return {
-        tensorData: float32Data,
+        tensorData: tensorBuffer,
         blurScore,
         imageData
     };
 };
+

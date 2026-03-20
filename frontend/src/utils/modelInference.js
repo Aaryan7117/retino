@@ -1,41 +1,56 @@
+// modelInference.js — Handles AI inference: tries FastAPI backend first, falls back to browser ONNX Web Worker
+
 import { preprocessImageForONNX, validateFundusImage } from './imagePreprocessing';
 
-// ─── Backend-first helper ────────────────────────────────────────────────────
-// Sends the image to the FastAPI backend for fast server-side ONNX inference.
-// Falls back to browser ONNX (below) if the backend is unreachable.
+/**
+ * Sends the image to the FastAPI backend for fast server-side ONNX inference.
+ * Falls back to browser ONNX if the backend is unreachable or times out.
+ * 
+ * @param {File} imageFile - The raw image file to analyze.
+ * @param {Function} onProgress - Callback for updating the UI with progress messages.
+ * @returns {Promise<Object>} The API response from the backend.
+ */
 async function analyzeViaBackend(imageFile, onProgress) {
     onProgress('Sending to server for fast analysis...');
+    
     const formData = new FormData();
     formData.append('file', imageFile);
-    const base = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+    
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+    
     // NOTE: FastAPI mounts inference router at prefix /api/inference,
-    // and the route handler is @router.post("/inference/"), so full path = /api/inference/inference/
-    const res = await fetch(`${base}/api/inference/`, {
+    // and the route handler is @router.post("/inference/"), so full path = /api/inference/
+    const inferenceResponse = await fetch(`${backendUrl}/api/inference/`, {
         method: 'POST',
         body: formData,
-        signal: AbortSignal.timeout(35000), // 35s — wait for backend startup
+        // CRITICAL: 35s timeout is necessary because cold-start on some backends (like Render/HuggingFace)
+        // can take up to 30s to spin up the container and load the model.
+        signal: AbortSignal.timeout(35000), 
     });
-    if (!res.ok) throw new Error(`Backend ${res.status}`);
-    const data = await res.json();
+
+    if (!inferenceResponse.ok) throw new Error(`Backend ${inferenceResponse.status}`);
+    
+    const responseData = await inferenceResponse.json();
     onProgress('Server analysis complete ✅');
+
     // Backend returns heatmap as base64 data URL string directly
     return {
-        ...data,
+        ...responseData,
         heatmapBlob: null,
-        heatmap_url: data.heatmap_url || null,
+        heatmap_url: responseData.heatmap_url || null,
         source: 'backend',
-        yoloDetections: data.yolo || null,
+        yoloDetections: responseData.yolo || null,
     };
 }
 
 
 /**
  * Main wrapper to run AI inference.
- * Strategy: Try backend first when online (3-5x faster), fall back to browser ONNX Worker.
+ * Strategy: Try backend first when online (3-5x faster), fall back to browser ONNX Web Worker.
  *
- * @param {File} imageFile - The image uploaded by the user
- * @param {Function} onProgress - Callback for loading states (e.g. "Loading model...", "Running inference...")
- * @returns {Promise<Object>} The API response format matching backend spec
+ * @param {File} imageFile - The image uploaded by the user.
+ * @param {Function} onProgress - Callback for loading states (e.g. "Loading model...", "Running inference...").
+ * @returns {Promise<Object>} The API response format matching backend spec.
  */
 export const analyzeImage = async (imageFile, onProgress) => {
     // Try backend first when online (3-5x faster than browser ONNX)
@@ -50,73 +65,76 @@ export const analyzeImage = async (imageFile, onProgress) => {
         onProgress('Offline mode — running AI on device...');
     }
 
-    // ─── Browser ONNX Web Worker (100% unchanged) ────────────────────────────
+    // --- Browser ONNX Web Worker ---
+    // We use a Web Worker for on-device inference to ensure the main UI thread 
+    // remains responsive. Running heavy matrix multiplications (WASM) directly 
+    // on the main thread would freeze the browser for several seconds.
     return new Promise((resolve, reject) => {
-        // 1. Convert File to HTMLImageElement to draw on Canvas
         const img = new Image();
-        const url = URL.createObjectURL(imageFile);
+        const objectUrl = URL.createObjectURL(imageFile);
 
         img.onload = () => {
             try {
                 onProgress('Preprocessing image...');
 
-                // ── Feature 1: Validate on ORIGINAL image BEFORE resizing ──────────
+                // Feature 1: Validate on ORIGINAL image BEFORE resizing
                 // Draw the original image onto a validation canvas (max 400px, preserving aspect)
-                const VSIZE = 400;
-                const vScale = Math.min(1, VSIZE / Math.max(img.width, img.height));
-                const vW = Math.round(img.width * vScale);
-                const vH = Math.round(img.height * vScale);
-                const vCanvas = document.createElement('canvas');
-                vCanvas.width = vW;
-                vCanvas.height = vH;
-                const vCtx = vCanvas.getContext('2d');
-                vCtx.drawImage(img, 0, 0, vW, vH);
-                const validationImageData = vCtx.getImageData(0, 0, vW, vH);
+                const VALIDATION_SIZE = 400; // CRITICAL: 400px used for fundus validation
+                const scaleFactor = Math.min(1, VALIDATION_SIZE / Math.max(img.width, img.height));
+                const validatedWidth = Math.round(img.width * scaleFactor);
+                const validatedHeight = Math.round(img.height * scaleFactor);
+                
+                const validationCanvas = document.createElement('canvas');
+                validationCanvas.width = validatedWidth;
+                validationCanvas.height = validatedHeight;
+                const validationCtx = validationCanvas.getContext('2d');
+                validationCtx.drawImage(img, 0, 0, validatedWidth, validatedHeight);
+                const validationImageData = validationCtx.getImageData(0, 0, validatedWidth, validatedHeight);
 
-                const vResult = validateFundusImage(validationImageData);
-                if (vResult.warnings?.length > 0)
-                    vResult.warnings.forEach(w => onProgress('⚠ ' + w));
+                const validationResult = validateFundusImage(validationImageData);
+                if (validationResult.warnings?.length > 0)
+                    validationResult.warnings.forEach(w => onProgress('⚠ ' + w));
 
                 // 2. Preprocess for ONNX (resize to 224×224, normalize)
+                // CRITICAL: Input must be exactly 224x224px — EfficientNetB3 was trained at this resolution
                 const { tensorData, blurScore, imageData } = preprocessImageForONNX(img);
 
-                // Warn about blur but don't block — demo images may be slightly soft
+                // Warn about blur but don't block
                 if (blurScore < 20) onProgress('⚠ Blurry image detected — results may be less accurate.');
 
                 // 4. Send to Web Worker for non-blocking inference
-                // Worker ensures heavy ONNX compute doesn't freeze the React UI
-                const worker = new Worker(new URL('./model.worker.js', import.meta.url), { type: 'module' });
+                const inferenceWorker = new Worker(new URL('./model.worker.js', import.meta.url), { type: 'module' });
 
-                worker.onmessage = (e) => {
-                    const { type, message, result, error, heatmapBlob } = e.data;
+                inferenceWorker.onmessage = (event) => {
+                    const { type, message, result, error, heatmapBlob } = event.data;
 
                     if (type === 'STATUS') {
                         onProgress(message);
                     } else if (type === 'RESULT') {
-                        URL.revokeObjectURL(url);
+                        URL.revokeObjectURL(objectUrl);
 
                         // Create object URL in main thread so it survives worker termination
                         result.heatmap_url = URL.createObjectURL(heatmapBlob);
                         result.heatmapBlob = heatmapBlob; // Pass the raw blob back for persistence
                         result.source = 'offline'; // Tag the source for UI display
 
-                        worker.terminate();
+                        inferenceWorker.terminate();
                         resolve(result);
                     } else if (type === 'ERROR') {
-                        URL.revokeObjectURL(url);
-                        worker.terminate();
+                        URL.revokeObjectURL(objectUrl);
+                        inferenceWorker.terminate();
                         reject(new Error(error));
                     }
                 };
 
-                worker.onerror = (err) => {
-                    URL.revokeObjectURL(url);
-                    worker.terminate();
+                inferenceWorker.onerror = (err) => {
+                    URL.revokeObjectURL(objectUrl);
+                    inferenceWorker.terminate();
                     reject(new Error(`Worker error: ${err.message}`));
                 };
 
                 // Send the Float32Array and filename (for demo deterministic results)
-                worker.postMessage({
+                inferenceWorker.postMessage({
                     type: 'INFERENCE',
                     tensorData: tensorData,
                     imageData: imageData, // Send imagedata so worker can draw heatmap
@@ -124,16 +142,17 @@ export const analyzeImage = async (imageFile, onProgress) => {
                 }, [tensorData.buffer]); // Transfer buffer for speed
 
             } catch (err) {
-                URL.revokeObjectURL(url);
+                URL.revokeObjectURL(objectUrl);
                 reject(err);
             }
         };
 
         img.onerror = () => {
-            URL.revokeObjectURL(url);
+            URL.revokeObjectURL(objectUrl);
             reject(new Error('Failed to load image file.'));
         };
 
-        img.src = url;
+        img.src = objectUrl;
     });
 };
+
