@@ -2,6 +2,7 @@
 // Provides real-time stats, patient records management, and AI visualization tools.
 
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { getAllPatients, deletePatient, getAuditLog } from '../utils/indexedDB';
 
 /**
@@ -567,7 +568,8 @@ export default function CampDashboard() {
 
             {/* ── Clinical Portal Pivot ────────────────────── */}
             <div className='flex justify-center mt-12 mb-6'>
-                <a href='/doctor' className='group flex items-center gap-3 px-6 py-3 rounded-2xl bg-indigo-950/40 border border-indigo-800/60 shadow-lg hover:bg-indigo-900/60 transition-all font-bold text-indigo-300 hover:text-white group'>
+                {/* Use React Router Link (client-side nav) — plain <a href> causes a hard reload which 404s on Vercel */}
+                <Link to='/doctor' className='group flex items-center gap-3 px-6 py-3 rounded-2xl bg-indigo-950/40 border border-indigo-800/60 shadow-lg hover:bg-indigo-900/60 transition-all font-bold text-indigo-300 hover:text-white group'>
                     <svg className="w-5 h-5 text-indigo-400 group-hover:text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                     </svg>
@@ -575,7 +577,7 @@ export default function CampDashboard() {
                     <svg className="w-4 h-4 text-indigo-500 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                     </svg>
-                </a>
+                </Link>
             </div>
 
             {/* ── Diagnostic Detail Modal ──────────────────── */}
