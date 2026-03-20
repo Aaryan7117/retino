@@ -3,7 +3,7 @@
  * Shows Online/Offline status + pending sync count from IndexedDB
  */
 import { useState, useEffect } from 'react';
-import { getQueuedRequests } from '../utils/indexedDB';
+import { getQueuedRequests, flushSyncQueue } from '../utils/indexedDB';
 
 export default function OfflineIndicator() {
     const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -20,6 +20,9 @@ export default function OfflineIndicator() {
     useEffect(() => {
         async function check() {
             try {
+                if (navigator.onLine) {
+                    await flushSyncQueue();
+                }
                 const q = await getQueuedRequests();
                 setPending(Array.isArray(q) ? q.length : 0);
             } catch { setPending(0); }
