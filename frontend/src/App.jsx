@@ -181,7 +181,9 @@ export default function App() {
 
         {/* HEADER */}
         <header className="bg-slate-950 border-b border-slate-800 sticky top-0 z-50">
-          <div className="max-w-[1400px] mx-auto px-4 h-16 flex items-center justify-between">
+
+          {/* Row 1: Logo + Action Buttons */}
+          <div className="max-w-[1400px] mx-auto px-4 h-14 flex items-center justify-between">
 
             <div className="flex items-center gap-3 shrink-0">
               <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/30">
@@ -191,33 +193,14 @@ export default function App() {
                 </svg>
               </div>
               <div className="flex flex-col justify-center">
-                <div className="text-white font-black text-lg leading-tight tracking-tight">
+                <div className="text-white font-black text-base leading-tight tracking-tight">
                   RetinaScan <span className="text-blue-500">AI</span>
                 </div>
-                <div className="text-[10px] text-slate-400 font-semibold leading-none mt-0.5">
+                <div className="text-[10px] text-slate-400 font-semibold leading-none mt-0.5 hidden sm:block">
                   Diabetic Retinopathy Screening
                 </div>
               </div>
             </div>
-
-            <nav className="hidden lg:flex items-center gap-1 shrink-0">
-              {NAVIGATION_ITEMS.map(({ to, label }) => (
-                <NavLink
-                  key={to}
-                  to={to}
-                  end={to === '/'}
-                  className={({ isActive }) =>
-                    `px-4 py-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${
-                      isActive
-                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40'
-                        : 'text-slate-400 hover:text-white'
-                    }`
-                  }
-                >
-                  {label}
-                </NavLink>
-              ))}
-            </nav>
 
             <div className="flex items-center gap-2 shrink-0">
               <InstallButton />
@@ -231,7 +214,31 @@ export default function App() {
               </button>
             </div>
           </div>
+
+          {/* Row 2: Scrollable Nav Tabs (visible on all screen sizes) */}
+          <div className="border-t border-slate-800/60 overflow-x-auto scrollbar-hide">
+            <nav className="flex items-center gap-1 px-4 py-1.5 min-w-max">
+              {NAVIGATION_ITEMS.map(({ to, label }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  end={to === '/'}
+                  className={({ isActive }) =>
+                    `px-4 py-1.5 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${
+                      isActive
+                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40'
+                        : 'text-slate-400 hover:text-white'
+                    }`
+                  }
+                >
+                  {label}
+                </NavLink>
+              ))}
+            </nav>
+          </div>
+
         </header>
+
 
         {/* MAIN */}
         <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6">
