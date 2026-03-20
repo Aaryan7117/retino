@@ -152,6 +152,7 @@ export default function Auth() {
                 <input
                   type="email"
                   placeholder="doctor@clinic.com"
+                  autoComplete="email"
                   className="w-full px-5 py-3.5 rounded-xl bg-slate-900 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all font-medium"
                   onChange={(e) => { setEmail(e.target.value); setErrorMessage(""); }}
                 />
@@ -163,6 +164,7 @@ export default function Auth() {
                   <input
                     type={passwordVisible ? "text" : "password"}
                     placeholder="••••••••"
+                    autoComplete={isLoginMode ? "current-password" : "new-password"}
                     className="w-full px-5 py-3.5 pr-12 rounded-xl bg-slate-900 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all font-medium"
                     onChange={(e) => { setPassword(e.target.value); setErrorMessage(""); }}
                   />

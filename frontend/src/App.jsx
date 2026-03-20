@@ -9,7 +9,6 @@ import BusinessModel from './components/BusinessModel';
 import CampDashboard from './components/CampDashboard';
 import Dashboard from './components/Dashboard';
 import DoctorPortal from './components/DoctorPortal';
-import JudgeQA from './components/JudgeQA';
 import OfflineIndicator from './components/OfflineIndicator';
 import ResultsView from './components/ResultsView';
 import Scanner from './components/Scanner';
@@ -183,34 +182,38 @@ export default function App() {
         <header className="bg-slate-950 border-b border-slate-800 sticky top-0 z-50">
 
           {/* Row 1: Logo + Action Buttons */}
-          <div className="max-w-[1400px] mx-auto px-4 h-14 flex items-center justify-between">
+          <div className="max-w-[1400px] mx-auto px-2 sm:px-4 h-14 flex items-center justify-between">
 
-            <div className="flex items-center gap-3 shrink-0">
-              <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/30">
+            <div className="flex items-center gap-2 sm:gap-3 shrink min-w-0 pr-2">
+              <div className="w-8 h-8 rounded-lg bg-blue-600 flex shrink-0 items-center justify-center shadow-lg shadow-blue-500/30">
                 <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
               </div>
-              <div className="flex flex-col justify-center">
-                <div className="text-white font-black text-base leading-tight tracking-tight">
+              <div className="flex flex-col justify-center min-w-0">
+                <div className="text-white font-black text-[13px] sm:text-base leading-tight tracking-tight truncate">
                   RetinaScan <span className="text-blue-500">AI</span>
                 </div>
-                <div className="text-[10px] text-slate-400 font-semibold leading-none mt-0.5 hidden sm:block">
+                <div className="text-[10px] text-slate-400 font-semibold leading-none mt-0.5 hidden sm:block truncate">
                   Diabetic Retinopathy Screening
                 </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
               <InstallButton />
               <BackendIndicator />
               <OfflineIndicator />
               <button
                 onClick={logout}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300 text-xs font-bold hover:bg-slate-700 transition-all"
+                className="flex items-center justify-center w-8 h-8 sm:w-auto sm:px-3 sm:py-1.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 transition-all shrink-0"
+                title="Logout"
               >
-                Logout
+                <svg className="w-4 h-4 sm:mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                <span className="hidden sm:inline text-xs font-bold">Logout</span>
               </button>
             </div>
           </div>
@@ -251,7 +254,6 @@ export default function App() {
             <Route path="/validation" element={<ValidationMetrics />} />
             <Route path="/yolo-results" element={<YoloResultsPage />} />
             <Route path="/doctor" element={<DoctorPortal />} />
-            <Route path="/qa" element={<JudgeQA />} />
           </Routes>
         </main>
 
