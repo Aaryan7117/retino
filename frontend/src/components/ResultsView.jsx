@@ -1,3 +1,6 @@
+// ResultsView.jsx — Displays AI-generated DR classification results for single-eye and dual-eye scans.
+// Supports grade probability charts, heatmap toggles, PDF export, WhatsApp sharing, and camp queue saving.
+
 import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import VoiceGuide from './VoiceGuide';
@@ -18,7 +21,10 @@ const GRADE_INFO = [
 const GRADE_LABELS = ['No DR', 'Mild DR', 'Moderate DR', 'Severe DR', 'Proliferative DR'];
 const GRADE_C = ['text-emerald-400', 'text-yellow-400', 'text-orange-400', 'text-red-400', 'text-pink-400'];
 
-// -- Feature A: Eye Result Card --
+/**
+ * Renders a summary card for one eye's AI inference result.
+ * Includes grade pill, confidence %, diagnosis text, and optional heatmap split view.
+ */
 function EyeResultCard({ label, accent, data }) {
     const ACCENT = {
         blue: 'border-blue-600 bg-blue-950/20',
@@ -46,7 +52,10 @@ function EyeResultCard({ label, accent, data }) {
     );
 }
 
-// -- Feature 2: Grade Probability Chart --
+/**
+ * Displays a horizontal bar chart of model-output class probabilities (Grade 0–4).
+ * Highlights the winning class and flags low-confidence borderline results.
+ */
 function GradeProbChart({ probs }) {
     const LBL  = ['No DR', 'Mild DR', 'Moderate DR', 'Severe DR', 'Proliferative'];
     const BARS = ['bg-emerald-500', 'bg-yellow-500', 'bg-orange-500', 'bg-red-500', 'bg-pink-500'];
@@ -82,11 +91,20 @@ function GradeProbChart({ probs }) {
     );
 }
 
+/**
+ * Main ResultsView Component
+ * Reads scan results from React Router state and renders the appropriate layout:
+ * - Legacy single-eye path: image toggle + clinical summary + actions.
+ * - Dual-eye path (record.rightEye present): overall summary + per-eye cards + actions.
+ */
 export default function ResultsView() {
     const { state } = useLocation();
     const navigate = useNavigate();
     const [viewMode, setViewMode] = useState(1);
     const [confirmSaved, setConfirmSaved] = useState(false);
+    const [showWaModal, setShowWaModal] = useState(false);
+    const [waNumber, setWaNumber] = useState('');
+    const [waTarget, setWaTarget] = useState(null); // 'legacy' or 'dual'
 
     if (!state || (!state.result && !state.record)) {
         return (
@@ -196,23 +214,7 @@ export default function ResultsView() {
                             <PDFGenerator patient={patientData || {}} result={result} imagePreview={imagePreview} />
                             {/* WhatsApp Share */}
                             <button
-                                onClick={() => {
-                                    const raw = prompt('Enter WhatsApp number to share report (10-digit Indian mobile):');
-                                    if (!raw) return;
-                                    const num = raw.replace(/\D/g, '').slice(-10);
-                                    if (!/^[6-9]\d{9}$/.test(num)) { alert('Invalid Indian mobile number.'); return; }
-                                    const text = encodeURIComponent(
-                                        `\ud83c\udfe5 RetinaScan AI Report\n` +
-                                        `Patient: ${patientData?.name || record?.name || 'Unknown'}\n` +
-                                        `ID: ${patientData?.patientId || record?.patientId || record?.id || '-'}\n` +
-                                        `Grade: ${result?.grade ?? record?.grade ?? '-'} \u2014 ${GRADE_INFO[result?.grade ?? record?.grade ?? 0]?.label || ''}\n` +
-                                        `Confidence: ${Math.round(((result?.confidence || record?.confidence || 0)) * 100)}%\n` +
-                                        `Risk: ${result?.risk_level || record?.risk_level || 'LOW'}\n` +
-                                        `Next Step: ${GRADE_INFO[result?.grade ?? record?.grade ?? 0]?.urgency || ''}\n` +
-                                        `\u26a0 AI Screening Support \u2014 Not a substitute for clinical diagnosis.`
-                                    );
-                                    window.open(`https://wa.me/91${num}?text=${text}`, '_blank', 'noopener,noreferrer');
-                                }}
+                                onClick={() => { setWaTarget('legacy'); setShowWaModal(true); }}
                                 className="w-full btn-primary bg-green-600 hover:bg-green-500 shadow-lg shadow-green-900/60 text-sm justify-start gap-3 flex items-center px-4 py-3 rounded-xl font-black text-white transition-all"
                             >
                                 <svg className="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24" fill="currentColor">
@@ -326,23 +328,7 @@ export default function ResultsView() {
                         />
                         {/* WhatsApp Share */}
                         <button
-                            onClick={() => {
-                                const raw = prompt('Enter WhatsApp number to share report (10-digit Indian mobile):');
-                                if (!raw) return;
-                                const num = raw.replace(/\D/g, '').slice(-10);
-                                if (!/^[6-9]\d{9}$/.test(num)) { alert('Invalid Indian mobile number.'); return; }
-                                const text = encodeURIComponent(
-                                    `\ud83c\udfe5 RetinaScan AI Report\n` +
-                                    `Patient: ${record?.name || 'Unknown'}\n` +
-                                    `ID: ${record?.patientId || record?.id || '-'}\n` +
-                                    `Grade: ${record?.grade ?? '-'} \u2014 ${GRADE_INFO[record?.grade ?? 0]?.label || ''}\n` +
-                                    `Confidence: ${Math.round((record?.confidence || 0) * 100)}%\n` +
-                                    `Risk: ${record?.risk_level || 'LOW'}\n` +
-                                    `Next Step: ${GRADE_INFO[record?.grade ?? 0]?.urgency || ''}\n` +
-                                    `\u26a0 AI Screening Support \u2014 Not a substitute for clinical diagnosis.`
-                                );
-                                window.open(`https://wa.me/91${num}?text=${text}`, '_blank', 'noopener,noreferrer');
-                            }}
+                            onClick={() => { setWaTarget('dual'); setShowWaModal(true); }}
                             className="w-full btn-primary bg-green-600 hover:bg-green-500 shadow-lg shadow-green-900/60 text-sm justify-start gap-3 flex items-center px-4 py-3 rounded-xl font-black text-white transition-all"
                         >
                             <svg className="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24" fill="currentColor">
@@ -364,6 +350,49 @@ export default function ResultsView() {
             {/* Feature 5: Patient History Chart */}
             {(patientData?.contact || record?.contact) && (
                 <LongitudinalChart contact={patientData?.contact || record?.contact} />
+            )}
+
+            {showWaModal && (
+              <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center px-4" onClick={() => setShowWaModal(false)}>
+                <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-sm space-y-4" onClick={e => e.stopPropagation()}>
+                  <h3 className="text-white font-black text-lg">📱 Share via WhatsApp</h3>
+                  <p className="text-slate-400 text-sm">Enter the patient's or doctor's 10-digit Indian mobile number</p>
+                  <input
+                    type="tel"
+                    value={waNumber}
+                    onChange={e => setWaNumber(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                    placeholder="e.g. 9876543210"
+                    className="w-full px-4 py-3 rounded-xl bg-slate-800 border border-slate-600 text-white text-lg font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-green-500"
+                    maxLength={10}
+                  />
+                  <div className="flex gap-3">
+                    <button onClick={() => setShowWaModal(false)} className="flex-1 py-2 rounded-xl bg-slate-800 text-slate-400 font-bold text-sm">Cancel</button>
+                    <button
+                      onClick={() => {
+                        const num = waNumber;
+                        if (!/^[6-9]\d{9}$/.test(num)) { alert('Invalid Indian mobile number.'); return; }
+                        const src = waTarget === 'dual' ? record : patientData;
+                        const g = src?.grade ?? result?.grade ?? 0;
+                        const text = encodeURIComponent(
+                          `🏥 RetinaScan AI Report\n` +
+                          `Patient: ${src?.name || 'Unknown'}\n` +
+                          `Grade: ${g} — ${GRADE_INFO[g]?.label || ''}\n` +
+                          `Confidence: ${Math.round(((src?.confidence || result?.confidence || 0)) * 100)}%\n` +
+                          `Risk: ${src?.risk_level || result?.risk_level || 'LOW'}\n` +
+                          `Next Step: ${GRADE_INFO[g]?.urgency || ''}\n` +
+                          `⚠ AI Screening Support — Not a substitute for clinical diagnosis.`
+                        );
+                        window.open(`https://wa.me/91${num}?text=${text}`, '_blank', 'noopener,noreferrer');
+                        setShowWaModal(false);
+                        setWaNumber('');
+                      }}
+                      className="flex-1 py-2 rounded-xl bg-green-600 hover:bg-green-500 text-white font-black text-sm"
+                    >
+                      Send →
+                    </button>
+                  </div>
+                </div>
+              </div>
             )}
         </div>
     );

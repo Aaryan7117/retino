@@ -1,10 +1,18 @@
+// DoctorPortal.jsx — Specialist review interface for AI-flagged DR patients.
+// Allows ophthalmologists to confirm, override, and annotate AI diagnoses.
+// Tabs: Urgent (Grade 3–4), Refer (Grade 2), All (flagged ≥ Grade 2 or HIGH risk).
+
 import { useState, useEffect } from 'react';
-import { getAllPatients } from '../utils/indexedDB';
-import { saveReview, getAllReviews } from '../utils/indexedDB';
+import { getAllPatients, saveReview, getAllReviews } from '../utils/indexedDB';
 
 const GRADE_LABELS = ['No DR', 'Mild DR', 'Moderate DR', 'Severe DR', 'Proliferative DR'];
 const GRADE_COLORS = ['text-emerald-400', 'text-yellow-400', 'text-orange-400', 'text-red-400', 'text-pink-400'];
 
+/**
+ * Formats a timestamp into a human-readable relative string (e.g. "3h ago").
+ * @param {string|number} ts - The ISO timestamp to format.
+ * @returns {string} Relative time string.
+ */
 function timeAgo(ts) {
     const diff = Date.now() - new Date(ts).getTime();
     const h = Math.floor(diff / 3600000);
@@ -13,6 +21,12 @@ function timeAgo(ts) {
     return `${Math.floor(h / 24)}d ago`;
 }
 
+/**
+ * DoctorPortal Component
+ * Loads all AI-flagged patients from IndexedDB and presents them in a three-tab
+ * review interface. Specialists can confirm grades, override them, or add notes.
+ * Auto-refreshes every 30 seconds to reflect new scans from the camp dashboard.
+ */
 export default function DoctorPortal() {
     const [patients, setPatients] = useState([]);
     const [reviews, setReviews] = useState({});
@@ -39,7 +53,7 @@ export default function DoctorPortal() {
 
     const tabs = {
         urgent: patients.filter(p => p.grade >= 3),
-        refer: patients.filter(p => p.grade >= 2),
+        refer: patients.filter(p => p.grade === 2),
         all: patients,
     };
 
@@ -77,13 +91,25 @@ export default function DoctorPortal() {
             </div>
 
             {/* Tabs */}
-            <div className="flex gap-1 p-1 bg-slate-900 rounded-xl">
-                {[['urgent', '🚨 Urgent (Grade 3-4)'], ['refer', '⚠ Refer (Grade 2+)'], ['all', 'All Flagged']].map(([key, lbl]) => (
-                    <button key={key} onClick={() => setTab(key)}
-                        className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${tab === key ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}>
-                        {lbl} <span className="ml-1 text-xs opacity-70">({tabs[key].length})</span>
-                    </button>
-                ))}
+            <div className="flex gap-2 p-1.5 bg-slate-900/80 rounded-2xl border border-slate-800">
+              {[
+                ['urgent', '🚨', 'Urgent', 'Grade 3-4', 'bg-red-600 shadow-red-900/50', 'text-red-400 hover:text-red-300'],
+                ['refer',  '⚠️', 'Refer',   'Grade 2+',  'bg-amber-600 shadow-amber-900/50', 'text-amber-400 hover:text-amber-300'],
+                ['all',    '📋', 'All',     'Flagged',   'bg-blue-600 shadow-blue-900/50', 'text-blue-400 hover:text-blue-300'],
+              ].map(([key, icon, label, sub, activeClass, inactiveClass]) => (
+                <button
+                  key={key}
+                  onClick={() => setTab(key)}
+                  className={`flex-1 flex flex-col items-center gap-0.5 py-2.5 px-3 rounded-xl text-sm font-bold transition-all ${
+                    tab === key
+                      ? `${activeClass} text-white shadow-lg`
+                      : `${inactiveClass} bg-transparent`
+                  }`}
+                >
+                  <span className="text-base">{icon} {label}</span>
+                  <span className="text-[10px] opacity-70">{sub} ({tabs[key].length})</span>
+                </button>
+              ))}
             </div>
 
             {shown.length === 0 ? (
@@ -120,18 +146,28 @@ export default function DoctorPortal() {
                                 <p className="text-xs text-slate-500">Confidence: <span className="text-white font-bold">{Math.round((p.confidence || 0) * 100)}%</span></p>
 
                                 {/* Heatmap images */}
-                                {(p.rightEye?.heatmap_url || p.leftEye?.heatmap_url) && (
+                                {(p.rightEye?.heatmap_url || p.leftEye?.heatmap_url || p.heatmap_url) && (
                                     <div className="grid grid-cols-2 gap-2">
-                                        {p.rightEye?.heatmap_url && (
+                                        {(p.rightEye?.heatmap_url || p.heatmap_url) && (
                                             <div>
                                                 <p className="text-xs text-blue-400 font-bold mb-1">OD (Right)</p>
-                                                <img src={p.rightEye.heatmap_url} className="w-full rounded-lg aspect-square object-cover" alt="Right eye heatmap" />
+                                                <img 
+                                                    src={p.rightEye?.heatmap_url || p.heatmap_url} 
+                                                    className="w-full rounded-lg aspect-square object-cover border border-slate-700 bg-slate-900" 
+                                                    alt="Right eye heatmap"
+                                                    onError={(e) => { e.target.src = 'https://via.placeholder.com/300/0f172a/64748b?text=Scan+Unavailable'; }}
+                                                />
                                             </div>
                                         )}
                                         {p.leftEye?.heatmap_url && (
                                             <div>
                                                 <p className="text-xs text-violet-400 font-bold mb-1">OS (Left)</p>
-                                                <img src={p.leftEye.heatmap_url} className="w-full rounded-lg aspect-square object-cover" alt="Left eye heatmap" />
+                                                <img 
+                                                    src={p.leftEye.heatmap_url} 
+                                                    className="w-full rounded-lg aspect-square object-cover border border-slate-700 bg-slate-900" 
+                                                    alt="Left eye heatmap"
+                                                    onError={(e) => { e.target.src = 'https://via.placeholder.com/300/0f172a/64748b?text=Scan+Unavailable'; }}
+                                                />
                                             </div>
                                         )}
                                     </div>
