@@ -60,14 +60,8 @@ export default function Scanner() {
     const [errorMsg, setErrorMsg] = useState('');
     const [dragging, setDragging] = useState(false);
 
-    const [patientData, setPatientData] = useState(() => {
-        try {
-            const savedDraft = sessionStorage.getItem('retinascan_patient_draft');
-            return savedDraft ? JSON.parse(savedDraft) : { name: '', age: '', gender: 'Male', diabeticSince: '', contact: '' };
-        } catch {
-            return { name: '', age: '', gender: 'Male', diabeticSince: '', contact: '' };
-        }
-    });
+    // Always start with a blank form — no draft restore
+    const [patientData, setPatientData] = useState({ name: '', age: '', gender: 'Male', diabeticSince: '', contact: '' });
 
     // Save draft to session storage whenever form changes
     useEffect(() => {

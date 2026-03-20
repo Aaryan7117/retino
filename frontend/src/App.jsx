@@ -154,6 +154,22 @@ export default function App() {
     };
   }, []);
 
+  /**
+   * Effect: Backend Keep-Alive Ping
+   * Pings the backend /health endpoint every 10 minutes to prevent Render free tier
+   * from spinning down. Also fires immediately on app load to wake the server early,
+   * so the first scan doesn't hit a cold start delay.
+   */
+  useEffect(() => {
+    const BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+    const ping = () => fetch(`${BACKEND}/health`, { mode: 'no-cors' }).catch(() => {});
+    // Wake the backend immediately when the app opens
+    ping();
+    // Then keep it warm every 10 minutes
+    const keepAliveTimer = setInterval(ping, 10 * 60 * 1000);
+    return () => clearInterval(keepAliveTimer);
+  }, []);
+
   // Guard: Redirect to Authentication if no user session exists
   if (!userSession) {
     return <Auth />;

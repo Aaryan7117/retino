@@ -18,15 +18,15 @@ async function analyzeViaBackend(imageFile, onProgress) {
     formData.append('file', imageFile);
     
     const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
-    
-    // NOTE: FastAPI mounts inference router at prefix /api/inference,
-    // and the route handler is @router.post("/inference/"), so full path = /api/inference/
-    const inferenceResponse = await fetch(`${backendUrl}/api/inference/`, {
+
+    // PERF: skip_yolo=true skips the slow 1024×1024 YOLO model during the main scan.
+    // YOLO is only needed on the Lesion Analysis page which triggers a separate call.
+    // This cuts backend response time from ~60s to ~3-5s on CPU.
+    const inferenceResponse = await fetch(`${backendUrl}/api/inference/?skip_yolo=true`, {
         method: 'POST',
         body: formData,
-        // CRITICAL: 35s timeout is necessary because cold-start on some backends (like Render/HuggingFace)
-        // can take up to 30s to spin up the container and load the model.
-        signal: AbortSignal.timeout(35000), 
+        // 15s timeout — cold starts are prevented by the keep-alive ping in App.jsx
+        signal: AbortSignal.timeout(15000),
     });
 
     if (!inferenceResponse.ok) throw new Error(`Backend ${inferenceResponse.status}`);

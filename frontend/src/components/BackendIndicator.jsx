@@ -6,11 +6,13 @@ import { useState, useEffect, useRef } from 'react';
 import { getQueuedRequests } from '../utils/indexedDB';
 
 /**
- * Global flag: set to true while inference is running so the health
- * check does not time out and flip the indicator to red.
+ * Reference counter: incremented when a scan starts, decremented when it ends.
+ * BackendIndicator skips health checks while this is > 0, preventing false-red
+ * flashes when the backend is busy processing inference.
  */
-export let scanInProgress = false;
-export function setScanInProgress(val) { scanInProgress = val; }
+let _scanCount = 0;
+export const setScanInProgress = (active) => { _scanCount += active ? 1 : -1; };
+export const isScanInProgress = () => _scanCount > 0;
 
 export default function BackendIndicator() {
     const [status, setStatus] = useState('checking');
@@ -22,7 +24,7 @@ export default function BackendIndicator() {
 
         async function checkHealth() {
             // Skip the check while inference is running — backend is busy, not down
-            if (scanInProgress) return;
+            if (isScanInProgress()) return;
 
             try {
                 const base = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';

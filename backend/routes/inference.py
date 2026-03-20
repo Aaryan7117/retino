@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, Query
 import cv2
 import numpy as np
 import base64
@@ -212,7 +212,10 @@ def generate_mock_heatmap(image_np: np.ndarray) -> str:
 
 
 @router.post("/")
-async def run_inference(file: UploadFile = File(...)):
+async def run_inference(
+    file: UploadFile = File(...),
+    skip_yolo: bool = Query(default=True, description="Skip YOLO lesion detection for faster grading-only response")
+):
     # 1. Read image bytes
     contents = await file.read()
     nparr = np.frombuffer(contents, np.uint8)
@@ -228,20 +231,29 @@ async def run_inference(file: UploadFile = File(...)):
     if is_blurry(image_rgb):
         quality_warnings.append("Blur detected — image processed with enhancement")
 
-    # 3. Real ONNX inference — falls back to demo result if model file is missing
+    # 3. Real ONNX grading inference (fast: ~2-3s on CPU at 224×224)
     try:
         result = run_grading(image_rgb)
-        yolo_result = run_yolo(image_rgb)
     except Exception as e:
         result = get_demo_result(file.filename)
-        yolo_result = {"detections": [], "image_shape": [1024, 1024], "count": 0}
         result['_note'] = f'ONNX fallback: {str(e)}'
 
-    # 4. Generate Heatmap
+    # 4. YOLO lesion detection (slow: ~30-40s on CPU at 1024×1024)
+    # Only run when explicitly requested (e.g. from the Lesion Analysis page)
+    if not skip_yolo:
+        try:
+            yolo_result = run_yolo(image_rgb)
+        except Exception as e:
+            yolo_result = {"detections": [], "image_shape": [1024, 1024], "count": 0}
+    else:
+        # Return empty detections — YOLO results page will re-request with skip_yolo=false
+        yolo_result = {"detections": [], "image_shape": [1024, 1024], "count": 0}
+
+    # 5. Generate Heatmap
     heatmap_input = (image_rgb[:,:,:3]).astype(np.uint8)
     heatmap_b64 = generate_mock_heatmap(heatmap_input)
 
-    # 5. Pack response
+    # 6. Pack response
     response = {
         **result,
         "yolo": yolo_result,
