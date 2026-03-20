@@ -1,22 +1,26 @@
+// Scanner.jsx — Main screening interface for capturing fundus images and running AI analysis
+
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { analyzeImage } from '../utils/modelInference';
 import { savePatient, logAudit, blobToBase64 } from '../utils/indexedDB';
 import AutoRetinaCam from './AutoRetinaCam';
 
-const FIELDS = [
+const FORM_FIELDS = [
     { id: 'name', label: 'Full Name', type: 'text', col: 2 },
     { id: 'age', label: 'Age (years)', type: 'number', col: 1 },
     { id: 'diabeticSince', label: 'Diabetic Since (yrs)', type: 'number', col: 1 },
     { id: 'contact', label: 'Mobile Number', type: 'tel', col: 2 },
 ];
 
-// -- EyeUploadZone sub-component --────
-function EyeUploadZone({ label, eyeKey, current, onSet, onClear }) {
-    const ref = useRef(null);
-    if (current) return (
+/**
+ * Sub-component for uploading or capturing an image for a specific eye.
+ */
+function EyeUploadZone({ label, eyeKey, currentImageData, onSet, onClear }) {
+    const fileInputRef = useRef(null);
+    if (currentImageData) return (
         <div className='relative rounded-xl overflow-hidden border border-slate-700'>
-            <img src={current.preview} className='w-full aspect-square object-cover' alt={label} />
+            <img src={currentImageData.preview} className='w-full aspect-square object-cover' alt={label} />
             <span className='absolute top-2 left-2 bg-blue-600 text-white text-xs font-bold px-2 py-0.5 rounded'>{label}</span>
             <button onClick={onClear} className='absolute top-2 right-2 w-6 h-6 bg-slate-900/80 text-white rounded-full text-xs flex items-center justify-center'>✕</button>
             <div className='absolute bottom-2 left-2 bg-emerald-600 text-white text-xs px-2 py-0.5 rounded font-bold'>Ready ✓</div>
@@ -27,15 +31,15 @@ function EyeUploadZone({ label, eyeKey, current, onSet, onClear }) {
             <div className='text-slate-400 text-sm font-bold mb-1'>{label}</div>
             <div className='text-slate-500 text-xs mb-3'>Fundus photograph</div>
             <div className='flex gap-2 justify-center'>
-                <button onClick={() => ref.current?.click()}
+                <button onClick={() => fileInputRef.current?.click()}
                     className='btn-secondary text-xs px-3 py-1.5'>Upload</button>
                 <button onClick={() => onSet('camera')}
                     className='btn-secondary text-xs px-3 py-1.5'>📷 Camera</button>
             </div>
-            <input ref={ref} type='file' accept='image/*' className='hidden'
+            <input ref={fileInputRef} type='file' accept='image/*' className='hidden'
                 onChange={e => {
-                    const f = e.target.files[0]; if (!f) return;
-                    onSet({ file: f, preview: URL.createObjectURL(f) });
+                    const selectedFile = e.target.files[0]; if (!selectedFile) return;
+                    onSet({ file: selectedFile, preview: URL.createObjectURL(selectedFile) });
                 }} />
         </div>
     );
@@ -44,34 +48,31 @@ function EyeUploadZone({ label, eyeKey, current, onSet, onClear }) {
 export default function Scanner() {
     const navigate = useNavigate();
 
-    // -- Legacy single-eye state (kept for existing logic compatibility) --
+    // -- State --
     const [image, setImage] = useState(null);
     const [preview, setPreview] = useState(null);
-
-    // -- Dual-eye state --
     const [rightEye, setRightEye] = useState(null);  // {file, preview}
-    const [leftEye, setLeftEye] = useState(null);    // {file, preview} — optional
+    const [leftEye, setLeftEye] = useState(null);    // {file, preview}
     const [activeEye, setActiveEye] = useState('right');
     const [showCamera, setShowCamera] = useState(null); // 'right' | 'left' | null
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [progressMsg, setProgressMsg] = useState('');
+    const [errorMsg, setErrorMsg] = useState('');
+    const [dragging, setDragging] = useState(false);
 
-    const [patient, setPatient] = useState(() => {
+    const [patientData, setPatientData] = useState(() => {
         try {
-            const saved = sessionStorage.getItem('retinascan_patient_draft');
-            return saved ? JSON.parse(saved) : { name: '', age: '', gender: 'Male', diabeticSince: '', contact: '' };
+            const savedDraft = sessionStorage.getItem('retinascan_patient_draft');
+            return savedDraft ? JSON.parse(savedDraft) : { name: '', age: '', gender: 'Male', diabeticSince: '', contact: '' };
         } catch {
             return { name: '', age: '', gender: 'Male', diabeticSince: '', contact: '' };
         }
     });
-    const [dragging, setDragging] = useState(false);
 
     // Save draft to session storage whenever form changes
     useEffect(() => {
-        sessionStorage.setItem('retinascan_patient_draft', JSON.stringify(patient));
-    }, [patient]);
-
-    const [isAnalyzing, setIsAnalyzing] = useState(false);
-    const [progressMsg, setProgressMsg] = useState('');
-    const [errorMsg, setErrorMsg] = useState('');
+        sessionStorage.setItem('retinascan_patient_draft', JSON.stringify(patientData));
+    }, [patientData]);
 
     const handleFile = (file) => {
         if (!file) return;
@@ -80,12 +81,16 @@ export default function Scanner() {
         setErrorMsg('');
     };
 
-    // -- NEW: Dual-Eye handleScan (replaces handleAnalyze for dual mode) --
+    /**
+     * Primary handler for running the dual-eye scan process.
+     * Validates form, runs inference (potentially in parallel), 
+     * persists results to IndexedDB, and navigates to Results view.
+     */
     const handleScan = async () => {
         if (!rightEye || isAnalyzing) return;
 
         // Form validation
-        if (!patient.name.trim() || !patient.age || !patient.contact.trim()) {
+        if (!patientData.name.trim() || !patientData.age || !patientData.contact.trim()) {
             setErrorMsg('Please fill in the Patient Name, Age, and Contact Number to continue.');
             window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
             return;
@@ -97,84 +102,89 @@ export default function Scanner() {
         try {
             setProgressMsg('🔄 Scanning both eyes simultaneously...');
 
-            // -- Run OD and OS inference in PARALLEL --
-            const [rightResult, leftResult] = await Promise.all([
+            // CRITICAL: Promise.all() is used to run inference for both eyes in parallel,
+            // significantly reducing total wait time compared to sequential execution.
+            const [rightInferenceResult, leftInferenceResult] = await Promise.all([
                 analyzeImage(rightEye.file, (msg) => setProgressMsg(`OD: ${msg}`)),
                 leftEye
                     ? analyzeImage(leftEye.file, (msg) => setProgressMsg(`OS: ${msg}`))
                     : Promise.resolve(null),
             ]);
 
-            // Convert heatmap blobs and image files to Base64 for persistent IndexedDB storage
-            // (blob:// URLs die on page refresh — Base64 strings survive forever)
+            // CRITICAL: Convert heatmap blobs and image files to Base64 data URLs.
+            // This is required because IndexedDB stores persistent data, but 
+            // blob:// URLs are temporary and will break when the page is refreshed.
+            // Base64 strings ensure the images remain available indefinitely.
             const [rightHeatB64, leftHeatB64, rightImgB64, leftImgB64] = await Promise.all([
-                rightResult.heatmapBlob ? blobToBase64(rightResult.heatmapBlob) : Promise.resolve(null),
-                (leftResult && leftResult.heatmapBlob) ? blobToBase64(leftResult.heatmapBlob) : Promise.resolve(null),
+                rightInferenceResult.heatmapBlob ? blobToBase64(rightInferenceResult.heatmapBlob) : Promise.resolve(null),
+                (leftInferenceResult && leftInferenceResult.heatmapBlob) ? blobToBase64(leftInferenceResult.heatmapBlob) : Promise.resolve(null),
                 rightEye?.file ? blobToBase64(rightEye.file) : Promise.resolve(null),
                 leftEye?.file  ? blobToBase64(leftEye.file)  : Promise.resolve(null),
             ]);
 
-            // Overall grade = worst of both eyes
-            const overallGrade = leftResult
-                ? Math.max(rightResult.grade, leftResult.grade)
-                : rightResult.grade;
+            // CRITICAL: Overall grade is set as the maximum (worst) grade found in either eye.
+            // This ensures that if even one eye shows severe DR, the patient is flagged accordingly.
+            const overallGradeValue = leftInferenceResult
+                ? Math.max(rightInferenceResult.grade, leftInferenceResult.grade)
+                : rightInferenceResult.grade;
 
             const now = new Date();
             const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
             const seq = String(Date.now()).slice(-3);
             const patientId = `TN-${dateStr}-${seq}`;
 
-            const record = {
-                ...patient,
+            const patientRecord = {
+                ...patientData,
                 id: patientId,
                 patientId,
-                name: patient.name,
-                age: Number(patient.age),
-                gender: patient.gender,
-                diabeticSince: Number(patient.diabeticSince) || 0,
-                contact: patient.contact,
+                name: patientData.name,
+                age: Number(patientData.age),
+                gender: patientData.gender,
+                diabeticSince: Number(patientData.diabeticSince) || 0,
+                contact: patientData.contact,
                 timestamp: now.toISOString(),
-                grade: overallGrade,
-                diagnosis: rightResult.diagnosis || rightResult.grade_label || '',
-                confidence: rightResult.confidence,
-                risk_score: rightResult.risk_score,
-                risk: overallGrade >= 3 ? 'HIGH' : overallGrade >= 2 ? 'MEDIUM' : 'LOW',
-                risk_level: overallGrade >= 3 ? 'HIGH' : overallGrade >= 2 ? 'MEDIUM' : 'LOW',
-                urgency: rightResult.urgency,
+                grade: overallGradeValue,
+                diagnosis: rightInferenceResult.diagnosis || rightInferenceResult.grade_label || '',
+                confidence: rightInferenceResult.confidence,
+                risk_score: rightInferenceResult.risk_score,
+                risk: overallGradeValue >= 3 ? 'HIGH' : overallGradeValue >= 2 ? 'MEDIUM' : 'LOW',
+                risk_level: overallGradeValue >= 3 ? 'HIGH' : overallGradeValue >= 2 ? 'MEDIUM' : 'LOW',
+                urgency: rightInferenceResult.urgency,
                 // Dual-eye sub-objects
                 rightEye: {
-                    grade: rightResult.grade,
-                    grade_label: rightResult.grade_label,
-                    diagnosis: rightResult.diagnosis,
-                    confidence: rightResult.confidence,
-                    class_probabilities: rightResult.class_probabilities || [],
-                    heatmap_url: rightHeatB64 || rightResult.heatmapUrl || rightResult.heatmap_url,
+                    grade: rightInferenceResult.grade,
+                    grade_label: rightInferenceResult.grade_label,
+                    diagnosis: rightInferenceResult.diagnosis,
+                    confidence: rightInferenceResult.confidence,
+                    class_probabilities: rightInferenceResult.class_probabilities || [],
+                    heatmap_url: rightHeatB64 || rightInferenceResult.heatmapUrl || rightInferenceResult.heatmap_url,
                     image_url: rightImgB64 || rightEye.preview,
-                    yoloDetections: rightResult.yoloDetections || rightResult.yolo || null,
-                    imageQuality: rightResult.imageQuality || 'Sufficient Image Quality',
+                    yoloDetections: rightInferenceResult.yoloDetections || rightInferenceResult.yolo || null,
+                    imageQuality: rightInferenceResult.imageQuality || 'Sufficient Image Quality',
                 },
-                leftEye: leftResult ? {
-                    grade: leftResult.grade,
-                    grade_label: leftResult.grade_label,
-                    diagnosis: leftResult.diagnosis,
-                    confidence: leftResult.confidence,
-                    class_probabilities: leftResult.class_probabilities || [],
-                    heatmap_url: leftHeatB64 || leftResult.heatmapUrl || leftResult.heatmap_url,
+                leftEye: leftInferenceResult ? {
+                    grade: leftInferenceResult.grade,
+                    grade_label: leftInferenceResult.grade_label,
+                    diagnosis: leftInferenceResult.diagnosis,
+                    confidence: leftInferenceResult.confidence,
+                    class_probabilities: leftInferenceResult.class_probabilities || [],
+                    heatmap_url: leftHeatB64 || leftInferenceResult.heatmapUrl || leftInferenceResult.heatmap_url,
                     image_url: leftImgB64 || leftEye.preview,
-                    yoloDetections: leftResult.yoloDetections || leftResult.yolo || null,
-                    imageQuality: leftResult.imageQuality || 'Sufficient Image Quality',
+                    yoloDetections: leftInferenceResult.yoloDetections || leftInferenceResult.yolo || null,
+                    imageQuality: leftInferenceResult.imageQuality || 'Sufficient Image Quality',
                 } : null,
             };
 
             try {
-                await savePatient(record);
+                // CRITICAL: Save to IndexedDB (Offline-First)
+                await savePatient(patientRecord);
                 // Feature 7: Audit log
-                await logAudit({ type: 'SCAN', patientId: record.id, grade: record.grade, confidence: record.confidence });
+                await logAudit({ type: 'SCAN', patientId: patientRecord.id, grade: patientRecord.grade, confidence: patientRecord.confidence });
             } catch (idbErr) {
                 console.warn('IndexedDB save failed (non-fatal):', idbErr);
             }
 
-            navigate('/results', { state: { record } });
+            navigate('/results', { state: { record: patientRecord } });
         } catch (err) {
             console.error('Analysis failed:', err);
             setErrorMsg(err.message || 'Scan failed. Please try again.');
@@ -184,10 +194,12 @@ export default function Scanner() {
         }
     };
 
-    // -- LEGACY: Single-eye handleAnalyze (untouched, kept for backward compat) --
+    /**
+     * LEGACY handler for single-eye scans.
+     */
     const handleAnalyze = async () => {
         if (!image) return;
-        if (!patient.name.trim() || !patient.age || !patient.contact.trim()) {
+        if (!patientData.name.trim() || !patientData.age || !patientData.contact.trim()) {
             setErrorMsg('Please fill in the Patient Name, Age, and Contact Number to continue.');
             window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
             return;
@@ -200,19 +212,19 @@ export default function Scanner() {
             const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
             const seq = String(Date.now()).slice(-3);
             const patientId = `TN-${dateStr}-${seq}`;
-            const patientWithId = { ...patient, patientId };
+            const patientWithId = { ...patientData, patientId };
             const GRADE_LABELS = [
                 'No Diabetic Retinopathy', 'Mild Diabetic Retinopathy', 'Moderate Diabetic Retinopathy',
                 'Severe Diabetic Retinopathy', 'Proliferative Diabetic Retinopathy',
             ];
             const RISK_MAP = ['LOW', 'LOW', 'MEDIUM', 'HIGH', 'HIGH'];
-            const record = {
+            const patientRecord = {
                 id: patientId,
-                name: patient.name,
-                age: Number(patient.age),
-                gender: patient.gender,
-                diabeticSince: Number(patient.diabeticSince) || 0,
-                contact: patient.contact,
+                name: patientData.name,
+                age: Number(patientData.age),
+                gender: patientData.gender,
+                diabeticSince: Number(patientData.diabeticSince) || 0,
+                contact: patientData.contact,
                 patientId,
                 grade: result.grade,
                 diagnosis: GRADE_LABELS[result.grade] || 'Unknown',
@@ -226,8 +238,8 @@ export default function Scanner() {
                 heatmap_blob: result.heatmapBlob || null,
             };
             try {
-                await savePatient(record);
-                await logAudit({ type: 'SCAN', patientId: record.id, grade: record.grade, confidence: record.confidence });
+                await savePatient(patientRecord);
+                await logAudit({ type: 'SCAN', patientId: patientRecord.id, grade: patientRecord.grade, confidence: patientRecord.confidence });
             } catch (idbErr) {
                 console.warn('IndexedDB save failed (non-fatal):', idbErr);
             }
@@ -240,7 +252,6 @@ export default function Scanner() {
         }
     };
 
-    // Determine if we are in dual-eye mode (right eye uploaded) or legacy mode
     const isDualMode = rightEye !== null;
 
     return (
@@ -253,7 +264,7 @@ export default function Scanner() {
                 <p className="text-slate-400 text-sm mt-2">Dual-eye scanning · Right Eye (OD) required · Left Eye (OS) optional</p>
             </div>
 
-            {/* ── DUAL-EYE Upload Section ── */}
+            {/* Fundus Images Section */}
             <div className="card-elevated space-y-4">
                 <h2 className="text-lg font-black text-white">Fundus Images</h2>
 
@@ -275,12 +286,12 @@ export default function Scanner() {
                 {/* Upload zone for active eye */}
                 {activeEye === 'right' ? (
                     <EyeUploadZone label='Right Eye (OD)' eyeKey='right'
-                        current={rightEye}
+                        currentImageData={rightEye}
                         onSet={(v) => v === 'camera' ? setShowCamera('right') : setRightEye(v)}
                         onClear={() => setRightEye(null)} />
                 ) : (
                     <EyeUploadZone label='Left Eye (OS)' eyeKey='left'
-                        current={leftEye}
+                        currentImageData={leftEye}
                         onSet={(v) => v === 'camera' ? setShowCamera('left') : setLeftEye(v)}
                         onClear={() => setLeftEye(null)} />
                 )}
@@ -300,7 +311,7 @@ export default function Scanner() {
                 )}
             </div>
 
-            {/* ── LEGACY single-eye upload (hidden when dual-eye mode active) ── */}
+            {/* Legacy single-eye upload (hidden when dual-eye mode active) */}
             {!isDualMode && (
                 <div className="card-elevated space-y-4">
                     <div className="flex items-center gap-2 relative group w-max">
@@ -341,14 +352,14 @@ export default function Scanner() {
                 </div>
             )}
 
-            {/* Patient form (unchanged) */}
+            {/* Patient form */}
             <div className="card-elevated space-y-4">
                 <div className="flex items-center justify-between">
                     <h2 className="text-lg font-black text-white">Patient Information</h2>
                     <button
                         onClick={() => {
                             if (confirm('Clear form data?')) {
-                                setPatient({ name: '', age: '', gender: 'Male', diabeticSince: '', contact: '' });
+                                setPatientData({ name: '', age: '', gender: 'Male', diabeticSince: '', contact: '' });
                                 setImage(null);
                                 setPreview(null);
                                 setRightEye(null);
@@ -361,18 +372,18 @@ export default function Scanner() {
                     </button>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                    {FIELDS.map(({ id, label, type }) => (
+                    {FORM_FIELDS.map(({ id, label, type }) => (
                         <div key={id}>
                             <label className="block text-xs font-bold text-slate-400 mb-1.5 uppercase tracking-wide">{label}</label>
-                            <input type={type} value={patient[id]}
-                                onChange={(e) => setPatient({ ...patient, [id]: e.target.value })}
+                            <input type={type} value={patientData[id]}
+                                onChange={(e) => setPatientData({ ...patientData, [id]: e.target.value })}
                                 className="input" placeholder={type === 'tel' ? '+91-XXXXX-XXXXX' : ''} />
                         </div>
                     ))}
                     <div>
                         <label className="block text-xs font-bold text-slate-400 mb-1.5 uppercase tracking-wide">Gender</label>
-                        <select value={patient.gender}
-                            onChange={(e) => setPatient({ ...patient, gender: e.target.value })}
+                        <select value={patientData.gender}
+                            onChange={(e) => setPatientData({ ...patientData, gender: e.target.value })}
                             className="input">
                             <option>Male</option><option>Female</option><option>Other</option>
                         </select>
@@ -390,7 +401,7 @@ export default function Scanner() {
                 </div>
             )}
 
-            {/* CTA — Dual eye mode preferred, falls back to single */}
+            {/* Analysis CTA */}
             {isDualMode ? (
                 <button
                     onClick={handleScan}
@@ -433,13 +444,13 @@ export default function Scanner() {
                 </button>
             )}
 
-            {/* AutoRetinaCam overlay */}
+            {/* Camera Overlay */}
             {showCamera && (
                 <AutoRetinaCam
                     eyeLabel={showCamera === 'right' ? 'Right Eye (OD)' : 'Left Eye (OS)'}
-                    onCapture={(file, preview) => {
-                        if (showCamera === 'right') setRightEye({ file, preview });
-                        else setLeftEye({ file, preview });
+                    onCapture={(capturedFile, capturedPreview) => {
+                        if (showCamera === 'right') setRightEye({ file: capturedFile, preview: capturedPreview });
+                        else setLeftEye({ file: capturedFile, preview: capturedPreview });
                         setShowCamera(null);
                     }}
                     onCancel={() => setShowCamera(null)}
@@ -448,3 +459,4 @@ export default function Scanner() {
         </div>
     );
 }
+
