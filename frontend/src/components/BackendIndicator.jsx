@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
+import { getQueuedRequests } from '../utils/indexedDB';
 
 export default function BackendIndicator() {
     const [status, setStatus] = useState('checking'); // 'checking', 'connected', 'disconnected'
+    const [pendingCount, setPendingCount] = useState(0);
 
     useEffect(() => {
         let isMounted = true;
@@ -52,19 +54,27 @@ export default function BackendIndicator() {
         const id = setInterval(() => {
             if (navigator.onLine) checkHealth();
         }, 10000);
+
+        const badgeId = setInterval(async () => {
+            const queue = await getQueuedRequests();
+            setPendingCount(queue.length);
+        }, 5000);
         
         return () => {
             isMounted = false;
             clearInterval(id);
+            clearInterval(badgeId);
             window.removeEventListener('online', handleOnline);
             window.removeEventListener('offline', handleOffline);
         };
     }, []);
 
+
+
     if (status === 'checking') {
         return (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-slate-700 bg-slate-800 text-xs font-semibold text-slate-400">
-                <span className="w-1.5 h-1.5 rounded-full bg-slate-500 animate-pulse" />
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-slate-700 bg-slate-800 text-xs font-bold text-slate-400">
+                <span className="w-2 h-2 rounded-full bg-slate-500 animate-pulse" />
                 <span>API</span>
             </div>
         );
@@ -72,8 +82,8 @@ export default function BackendIndicator() {
 
     if (status === 'connected') {
         return (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-emerald-700/60 bg-emerald-900/40 text-xs font-semibold text-emerald-300 transition-colors">
-                <span className="text-[10px] leading-none mb-[1px]">✓</span>
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 text-xs font-bold text-emerald-400 transition-colors">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 relative badge-ping" />
                 <span>API</span>
             </div>
         );
@@ -81,8 +91,8 @@ export default function BackendIndicator() {
 
     // Disconnected state
     return (
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-rose-700/60 bg-rose-900/40 text-xs font-semibold text-rose-300 transition-colors" title="Backend Server Disconnected">
-            <span className="text-[10px] leading-none mb-[1px]">✕</span>
+        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-rose-500/20 bg-rose-500/10 text-xs font-bold text-rose-400 transition-colors" title="Backend Server Disconnected">
+            <span className="w-2 h-2 rounded-full bg-rose-500" />
             <span>API</span>
         </div>
     );

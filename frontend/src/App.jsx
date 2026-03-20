@@ -1,24 +1,28 @@
-import { BrowserRouter, Routes, Route, NavLink, Link } from 'react-router-dom';
+// App.jsx — Root component of the RetinaScan AI PWA. Handles routing, authentication state, and service worker updates.
+
 import { useState, useEffect } from 'react';
-import Dashboard from './components/Dashboard';
-import Scanner from './components/Scanner';
-import ResultsView from './components/ResultsView';
-import CampDashboard from './components/CampDashboard';
-import OfflineIndicator from './components/OfflineIndicator';
+import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
+
+import Auth from './components/Auth';
 import BackendIndicator from './components/BackendIndicator';
 import BusinessModel from './components/BusinessModel';
-import ValidationMetrics from './components/ValidationMetrics';
-import YoloResultsPage from './components/YoloResultsPage';
+import CampDashboard from './components/CampDashboard';
+import Dashboard from './components/Dashboard';
 import DoctorPortal from './components/DoctorPortal';
 import JudgeQA from './components/JudgeQA';
-import { flushSyncQueue } from './utils/indexedDB';
-// NEW IMPORTS
-import Auth from './components/Auth';
-import { supabase } from './utils/supabaseClient';
-import { logout } from './utils/auth';
-import DoctorDashboard from './components/DoctorDashboard';
+import OfflineIndicator from './components/OfflineIndicator';
+import ResultsView from './components/ResultsView';
+import Scanner from './components/Scanner';
+import ValidationMetrics from './components/ValidationMetrics';
+import YoloResultsPage from './components/YoloResultsPage';
 
-// --- Update-available toast ----
+import { logout } from './utils/auth';
+import { flushSyncQueue } from './utils/indexedDB';
+import { supabase } from './utils/supabaseClient';
+
+/**
+ * Toast notification for service worker updates.
+ */
 function UpdateToast({ wb, onDismiss }) {
   const handleUpdate = () => {
     if (wb) {
@@ -43,96 +47,115 @@ function UpdateToast({ wb, onDismiss }) {
   );
 }
 
+/**
+ * Button to trigger PWA installation prompt.
+ */
 function InstallButton() {
-  const [prompt, setPrompt] = useState(null);
-  const [installed, setInstalled] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState(null);
+  const [isAlreadyInstalled, setIsAlreadyInstalled] = useState(false);
 
   useEffect(() => {
-    const handler = (e) => {
-      e.preventDefault();
-      setPrompt(e);
+    const handleBeforeInstallPrompt = (event) => {
+      event.preventDefault();
+      setInstallPrompt(event);
     };
-    window.addEventListener('beforeinstallprompt', handler);
-    return () => window.removeEventListener('beforeinstallprompt', handler);
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
   }, []);
 
-  const handleInstall = async () => {
-    if (prompt) {
-      prompt.prompt();
-      const { outcome } = await prompt.userChoice;
+  const handleInstallClick = async () => {
+    if (installPrompt) {
+      installPrompt.prompt();
+      const { outcome } = await installPrompt.userChoice;
       if (outcome === 'accepted') {
-        setInstalled(true);
-        setPrompt(null);
+        setIsAlreadyInstalled(true);
+        setInstallPrompt(null);
       }
     }
   };
 
   return (
-    <button onClick={handleInstall}>
-      {installed ? 'Installed' : 'Install App'}
+    <button
+      onClick={handleInstallClick}
+      className={`hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold transition-all ${
+        isAlreadyInstalled 
+          ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
+          : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white'
+      }`}
+    >
+      <svg className="w-3.5 h-3.5 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+      </svg>
+      {isAlreadyInstalled ? 'Installed' : 'Install App'}
     </button>
   );
 }
 
-const NAV = [
+const NAVIGATION_ITEMS = [
   { to: '/', label: 'Dashboard' },
   { to: '/scan', label: 'New Scan' },
   { to: '/camp', label: 'Camp Stats' },
   { to: '/business', label: 'Business' },
   { to: '/validation', label: 'Validation' },
-  { to: '/doctor-dashboard', label: 'Doctor Dashboard' },
 ];
 
 export default function App() {
-  const [updateWb, setUpdateWb] = useState(null);
+  const [waitingServiceWorker, setWaitingServiceWorker] = useState(null);
   const [showUpdateToast, setShowUpdateToast] = useState(false);
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [userSession, setUserSession] = useState(null);
 
-  // NEW: user state
-  const [user, setUser] = useState(null);
-
-  // NEW: Auth listener
+  /**
+   * Effect: Auth State Listener
+   * Initial check for current user and subscription to auth state changes in Supabase.
+   */
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
-      setUser(data?.user ?? null);
+      setUserSession(data?.user ?? null);
     });
 
-    const { data: listener } = supabase.auth.onAuthStateChange(
+    const { data: authListener } = supabase.auth.onAuthStateChange(
       (_event, session) => {
-        setUser(session?.user ?? null);
+        setUserSession(session?.user ?? null);
       }
     );
 
     return () => {
-      listener.subscription.unsubscribe();
+      authListener.subscription.unsubscribe();
     };
   }, []);
 
-  // Existing SW update listener
+  /**
+   * Effect: Service Worker Update Listener
+   * Listens for custom 'sw:update-available' event to prompt user for a refresh.
+   */
   useEffect(() => {
-    const handler = (e) => {
-      setUpdateWb(e.detail);
+    const handleSWUpdate = (event) => {
+      setWaitingServiceWorker(event.detail);
       setShowUpdateToast(true);
     };
-    window.addEventListener('sw:update-available', handler);
-    return () => window.removeEventListener('sw:update-available', handler);
+    window.addEventListener('sw:update-available', handleSWUpdate);
+    return () => window.removeEventListener('sw:update-available', handleSWUpdate);
   }, []);
 
+  /**
+   * Effect: Online Sync Listener
+   * Automatically flushes the IndexedDB sync queue when the application regains internet connectivity.
+   */
   useEffect(() => {
-    const handleOnline = () => {
-      console.log("🌐 Back online. Syncing...");
+    const handleOnlineStatus = () => {
+      console.log("🌐 Application back online. Syncing queued requests...");
       flushSyncQueue();
     };
 
-    window.addEventListener('online', handleOnline);
+    window.addEventListener('online', handleOnlineStatus);
 
     return () => {
-      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('online', handleOnlineStatus);
     };
   }, []);
 
-  // ✅ BLOCK APP IF NOT LOGGED IN
-  if (!user) {
+  // Guard: Redirect to Authentication if no user session exists
+  if (!userSession) {
     return <Auth />;
   }
 
@@ -142,29 +165,51 @@ export default function App() {
 
         {/* HEADER */}
         <header className="bg-slate-950 border-b border-slate-800 sticky top-0 z-50">
-          <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
+          <div className="max-w-[1400px] mx-auto px-4 h-16 flex items-center justify-between">
 
-            <div className="text-white font-bold">
-              RetinaScan <span className="text-blue-400">AI</span>
+            <div className="flex items-center gap-3 shrink-0">
+              <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/30">
+                <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </div>
+              <div className="flex flex-col justify-center">
+                <div className="text-white font-black text-lg leading-tight tracking-tight">
+                  RetinaScan <span className="text-blue-500">AI</span>
+                </div>
+                <div className="text-[10px] text-slate-400 font-semibold leading-none mt-0.5">
+                  Diabetic Retinopathy Screening
+                </div>
+              </div>
             </div>
 
-            <nav className="hidden md:flex gap-2">
-              {NAV.map(({ to, label }) => (
-                <NavLink key={to} to={to}>
+            <nav className="hidden lg:flex items-center gap-1 shrink-0">
+              {NAVIGATION_ITEMS.map(({ to, label }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  end={to === '/'}
+                  className={({ isActive }) =>
+                    `px-4 py-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${
+                      isActive
+                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40'
+                        : 'text-slate-400 hover:text-white'
+                    }`
+                  }
+                >
                   {label}
                 </NavLink>
               ))}
             </nav>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
               <InstallButton />
               <BackendIndicator />
               <OfflineIndicator />
-
-              {/* ✅ Logout Button */}
               <button
                 onClick={logout}
-                className="bg-red-600 px-3 py-1 rounded text-xs"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300 text-xs font-bold hover:bg-slate-700 transition-all"
               >
                 Logout
               </button>
@@ -184,7 +229,6 @@ export default function App() {
             <Route path="/yolo-results" element={<YoloResultsPage />} />
             <Route path="/doctor" element={<DoctorPortal />} />
             <Route path="/qa" element={<JudgeQA />} />
-            <Route path="/doctor-dashboard" element={<DoctorDashboard />} />
           </Routes>
         </main>
 
@@ -194,9 +238,9 @@ export default function App() {
         </footer>
 
         {showUpdateToast && (
-          <UpdateToast wb={updateWb} onDismiss={() => setShowUpdateToast(false)} />
+          <UpdateToast wb={waitingServiceWorker} onDismiss={() => setShowUpdateToast(false)} />
         )}
       </div>
     </BrowserRouter>
   );
-}
+}
