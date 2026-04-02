@@ -1,12 +1,25 @@
 import { useState, useEffect } from 'react';
 import { SUPPORTED_LANGUAGES, generateScript, speakText, stopSpeaking, pauseSpeaking, resumeSpeaking } from '../utils/voiceAssistant';
 
-export default function VoiceGuide({ patient, result }) {
-    const [language, setLanguage] = useState('en-IN');
+export default function VoiceGuide({ patient, result, language: propLanguage, onLanguageChange }) {
+    const [language, setLanguage] = useState(propLanguage || 'en-IN');
     const [isPlaying, setIsPlaying] = useState(false);
     const [isPaused, setIsPaused] = useState(false);
     const [transcript, setTranscript] = useState('');
     const [wordIndex, setWordIndex] = useState(0);
+
+    // Sync internal language state with prop if changed from parent
+    useEffect(() => {
+        if (propLanguage && propLanguage !== language) {
+            setLanguage(propLanguage);
+        }
+    }, [propLanguage]);
+
+    const handleLanguageChange = (e) => {
+        const newLang = e.target.value;
+        setLanguage(newLang);
+        if (onLanguageChange) onLanguageChange(newLang);
+    };
 
     const textToSpeak = generateScript(patient, result, language);
 
@@ -102,7 +115,7 @@ export default function VoiceGuide({ patient, result }) {
                 <div className="flex items-center gap-2">
                     <select
                         value={language}
-                        onChange={(e) => setLanguage(e.target.value)}
+                        onChange={handleLanguageChange}
                         className="bg-slate-800 border-none text-xs text-white rounded-lg focus:ring-0 py-1.5 px-3 cursor-pointer"
                     >
                         {SUPPORTED_LANGUAGES.map(lang => (

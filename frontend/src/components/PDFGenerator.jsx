@@ -14,13 +14,13 @@ import { generatePDF } from '../utils/pdfReport';
 // ← Set your 10-digit WhatsApp number here (without country code / spaces)
 const DOCTOR_PHONE = ''; // e.g. '9876543210'
 
-export default function PDFGenerator({ patient, result, imagePreview }) {
+export default function PDFGenerator({ patient, result, imagePreview, record, language = 'en-IN' }) {
     const [status, setStatus] = useState('idle'); // idle | generating | done | error
 
     const handleGenerate = async () => {
         setStatus('generating');
         try {
-            await generatePDF({ patient, result, imagePreview });
+            await generatePDF({ patient, result, imagePreview, record, language });
             setStatus('done');
             setTimeout(() => setStatus('idle'), 3000);
         } catch (err) {

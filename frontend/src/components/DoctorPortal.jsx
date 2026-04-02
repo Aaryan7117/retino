@@ -145,31 +145,81 @@ export default function DoctorPortal() {
                                 <p className="text-slate-300 text-sm">{p.diagnosis}</p>
                                 <p className="text-xs text-slate-500">Confidence: <span className="text-white font-bold">{Math.round((p.confidence || 0) * 100)}%</span></p>
 
-                                {/* Heatmap images */}
-                                {(p.rightEye?.heatmap_url || p.leftEye?.heatmap_url || p.heatmap_url) && (
-                                    <div className="grid grid-cols-2 gap-2">
-                                        {(p.rightEye?.heatmap_url || p.heatmap_url) && (
+                                {/* Retinal Images — 2 rows: originals then heatmaps */}
+                                {(p.od_image_url || p.os_image_url || p.od_heatmap_url || p.os_heatmap_url ||
+                                  p.rightEye?.image_url || p.rightEye?.heatmap_url ||
+                                  p.leftEye?.image_url  || p.leftEye?.heatmap_url  ||
+                                  p.heatmap_url || p.image_url) && (
+                                    <div className="space-y-2">
+                                        {/* Row 1: Original scans */}
+                                        <p className="text-[10px] text-blue-400 font-bold uppercase tracking-wider">Original Scans</p>
+                                        <div className="grid grid-cols-2 gap-2">
                                             <div>
-                                                <p className="text-xs text-blue-400 font-bold mb-1">OD (Right)</p>
-                                                <img 
-                                                    src={p.rightEye?.heatmap_url || p.heatmap_url} 
-                                                    className="w-full rounded-lg aspect-square object-cover border border-slate-700 bg-slate-900" 
-                                                    alt="Right eye heatmap"
-                                                    onError={(e) => { e.target.src = 'https://via.placeholder.com/300/0f172a/64748b?text=Scan+Unavailable'; }}
-                                                />
+                                                <p className="text-[9px] text-slate-500 mb-1">OD (Right)</p>
+                                                {(p.od_image_url || p.rightEye?.image_url || p.image_url) ? (
+                                                    <img
+                                                        src={p.od_image_url || p.rightEye?.image_url || p.image_url}
+                                                        className="w-full rounded-lg aspect-square object-cover border border-slate-700 bg-slate-900"
+                                                        alt="Right eye scan"
+                                                        onError={(e) => { e.target.style.display = 'none'; }}
+                                                    />
+                                                ) : (
+                                                    <div className="w-full rounded-lg aspect-square bg-slate-900 border border-slate-700 flex items-center justify-center">
+                                                        <span className="text-slate-600 text-xs">No image</span>
+                                                    </div>
+                                                )}
                                             </div>
-                                        )}
-                                        {p.leftEye?.heatmap_url && (
                                             <div>
-                                                <p className="text-xs text-violet-400 font-bold mb-1">OS (Left)</p>
-                                                <img 
-                                                    src={p.leftEye.heatmap_url} 
-                                                    className="w-full rounded-lg aspect-square object-cover border border-slate-700 bg-slate-900" 
-                                                    alt="Left eye heatmap"
-                                                    onError={(e) => { e.target.src = 'https://via.placeholder.com/300/0f172a/64748b?text=Scan+Unavailable'; }}
-                                                />
+                                                <p className="text-[9px] text-slate-500 mb-1">OS (Left)</p>
+                                                {(p.os_image_url || p.leftEye?.image_url) ? (
+                                                    <img
+                                                        src={p.os_image_url || p.leftEye?.image_url}
+                                                        className="w-full rounded-lg aspect-square object-cover border border-slate-700 bg-slate-900"
+                                                        alt="Left eye scan"
+                                                        onError={(e) => { e.target.style.display = 'none'; }}
+                                                    />
+                                                ) : (
+                                                    <div className="w-full rounded-lg aspect-square bg-slate-900 border border-slate-700 flex items-center justify-center">
+                                                        <span className="text-slate-600 text-xs">Not scanned</span>
+                                                    </div>
+                                                )}
                                             </div>
-                                        )}
+                                        </div>
+
+                                        {/* Row 2: AI Heatmaps / Lesion overlays */}
+                                        <p className="text-[10px] text-amber-400 font-bold uppercase tracking-wider">Lesion Heatmaps</p>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div>
+                                                <p className="text-[9px] text-slate-500 mb-1">OD (Right)</p>
+                                                {(p.od_heatmap_url || p.rightEye?.heatmap_url || p.heatmap_url) ? (
+                                                    <img
+                                                        src={p.od_heatmap_url || p.rightEye?.heatmap_url || p.heatmap_url}
+                                                        className="w-full rounded-lg aspect-square object-cover border border-slate-700 bg-slate-900"
+                                                        alt="Right eye heatmap"
+                                                        onError={(e) => { e.target.style.display = 'none'; }}
+                                                    />
+                                                ) : (
+                                                    <div className="w-full rounded-lg aspect-square bg-slate-900 border border-slate-700 flex items-center justify-center">
+                                                        <span className="text-slate-600 text-xs">No heatmap</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div>
+                                                <p className="text-[9px] text-slate-500 mb-1">OS (Left)</p>
+                                                {(p.os_heatmap_url || p.leftEye?.heatmap_url) ? (
+                                                    <img
+                                                        src={p.os_heatmap_url || p.leftEye?.heatmap_url}
+                                                        className="w-full rounded-lg aspect-square object-cover border border-slate-700 bg-slate-900"
+                                                        alt="Left eye heatmap"
+                                                        onError={(e) => { e.target.style.display = 'none'; }}
+                                                    />
+                                                ) : (
+                                                    <div className="w-full rounded-lg aspect-square bg-slate-900 border border-slate-700 flex items-center justify-center">
+                                                        <span className="text-slate-600 text-xs">Not scanned</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
                                     </div>
                                 )}
 

@@ -21,7 +21,7 @@ npm run dev       # → http://localhost:5173
 ```bash
 cd backend
 pip install -r requirements.txt
-uvicorn main:app --reload   # → http://127.0.0.1:8000
+ uvicorn main:app --reload  # → http://127.0.0.1:8000
 # Swagger UI: http://127.0.0.1:8000/docs
 ```
 

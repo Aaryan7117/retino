@@ -16,7 +16,23 @@ export default function LongitudinalChart({ contact }) {
             .catch(() => setScans([]));
     }, [contact]);
 
-    if (scans.length < 2) return null;
+    if (scans.length < 2) {
+        return (
+            <div className="flex flex-col items-center justify-center py-10 px-6 text-center space-y-4 bg-slate-900/50 rounded-2xl border border-slate-800/50">
+                <div className="w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center">
+                    <svg className="w-6 h-6 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                    </svg>
+                </div>
+                <div>
+                    <p className="text-white font-bold text-sm">Baseline Analysis</p>
+                    <p className="text-slate-500 text-xs mt-1 max-w-[200px] mx-auto">
+                        This is the patient's first scan. Progression analytics will appear after future screenings.
+                    </p>
+                </div>
+            </div>
+        );
+    }
 
     const n = scans.length;
     const W = 400, H = 180;

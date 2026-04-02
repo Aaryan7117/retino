@@ -45,9 +45,22 @@ export async function login(email, password) {
 
 /**
  * Logs out the current user by ending their session.
+ * Also deletes the user-scoped IndexedDB for full data privacy on shared browsers.
  * @returns {Promise<void>}
  */
 export async function logout() {
+  // Get the user's ID before signing out so we can delete their scoped DB
+  try {
+    const { data } = await supabase.auth.getUser()
+    const userId = data?.user?.id
+    if (userId) {
+      indexedDB.deleteDatabase(`RetinaScanDB_${userId}`)
+      console.log(`[logout] Deleted IndexedDB: RetinaScanDB_${userId}`)
+    }
+  } catch (err) {
+    console.warn('[logout] Could not delete user IndexedDB:', err.message)
+  }
+
   await supabase.auth.signOut()
 }
 

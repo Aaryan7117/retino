@@ -1,7 +1,6 @@
-// App.jsx — Root component of the RetinaScan AI PWA. Handles routing, authentication state, and service worker updates.
-
-import { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
+// App.jsx — Root component of the RetinaScan AI PWA. Handles routing, authentication state, and service worker updates
+import { useState, useEffect, Suspense, lazy } from 'react';
+import { BrowserRouter, Routes, Route, NavLink, useLocation, Navigate } from 'react-router-dom';
 
 import Auth from './components/Auth';
 import BackendIndicator from './components/BackendIndicator';
@@ -10,10 +9,18 @@ import CampDashboard from './components/CampDashboard';
 import Dashboard from './components/Dashboard';
 import DoctorPortal from './components/DoctorPortal';
 import OfflineIndicator from './components/OfflineIndicator';
+import ResetPassword from './components/ResetPassword';
 import ResultsView from './components/ResultsView';
 import Scanner from './components/Scanner';
 import ValidationMetrics from './components/ValidationMetrics';
 import YoloResultsPage from './components/YoloResultsPage';
+
+// --- NEW ONBOARDING & PROFILE COMPONENTS ---
+import RoleSelect from './components/RoleSelect';
+import DoctorOnboarding from './components/DoctorOnboarding';
+import PatientOnboarding from './components/PatientOnboarding';
+import FindDoctors from './components/FindDoctors';
+import ProfilePage from './components/ProfilePage';
 
 import { logout } from './utils/auth';
 import { flushSyncQueue, syncPatientsFromCloud } from './utils/indexedDB';
@@ -24,20 +31,18 @@ import { supabase } from './utils/supabaseClient';
  */
 function UpdateToast({ wb, onDismiss }) {
   const handleUpdate = () => {
-    if (wb) {
-      wb.messageSkipWaiting();
-    }
+    if (wb) wb.messageSkipWaiting();
     onDismiss();
   };
 
   return (
     <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3
-                    bg-blue-700 text-white text-sm font-semibold px-5 py-3 rounded-2xl
-                    shadow-2xl shadow-blue-900/60 border border-blue-500 animate-bounce-once">
+                    bg-violet-700 text-white text-sm font-semibold px-5 py-3 rounded-2xl
+                    shadow-2xl shadow-violet-900/60 border border-violet-500 animate-bounce-once">
       <span>New update available. Refresh to update.</span>
       <button
         onClick={handleUpdate}
-        className="ml-1 bg-white text-blue-700 px-3 py-1 rounded-lg text-xs font-bold"
+        className="ml-1 bg-white text-violet-700 px-3 py-1 rounded-lg text-xs font-bold"
       >
         Refresh
       </button>
@@ -81,7 +86,7 @@ function InstallButton() {
       className={`hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold transition-all ${
         isAlreadyInstalled 
           ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
-          : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white'
+          : 'bg-[#1F2937] border-[#374151] text-slate-300 hover:bg-[#374151] hover:text-white'
       }`}
     >
       <svg className="w-3.5 h-3.5 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -92,7 +97,7 @@ function InstallButton() {
   );
 }
 
-const NAVIGATION_ITEMS = [
+const BASE_NAVIGATION = [
   { to: '/', label: 'Dashboard' },
   { to: '/scan', label: 'New Scan' },
   { to: '/camp', label: 'Camp Stats' },
@@ -100,41 +105,303 @@ const NAVIGATION_ITEMS = [
   { to: '/validation', label: 'Validation' },
 ];
 
+/**
+ * AppContent Component: Handles the Auth Gate and Main Layout.
+ * Must be wrapped in BrowserRouter.
+ */
+function AppContent({ userSession, userProfile, setUserProfile, profileLoading, waitingServiceWorker, showUpdateToast, setShowUpdateToast }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const location = useLocation();
+  const isResetPage = location.pathname === '/reset-password';
+
+  const isPatient = userProfile?.role === 'patient';
+  const isDoctor = userProfile?.role === 'doctor';
+  const navItems = isPatient
+    ? [...BASE_NAVIGATION, { to: '/find-doctors', label: 'Find Doctors' }]
+    : isDoctor
+    ? [...BASE_NAVIGATION, { to: '/doctor', label: 'Review' }]
+    : BASE_NAVIGATION;
+
+  // Auth Gate
+  if (!userSession && !isResetPage) {
+    return <Auth />;
+  }
+
+  // Show loading spinner while profile loads
+  if (userSession && profileLoading) {
+    return (
+      <div className='min-h-screen bg-[#0A0F1E] flex items-center justify-center'>
+        <div className='w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin' />
+      </div>
+    );
+  }
+
+  // If profile is complete but user is still on an onboarding route, redirect to home
+  if (userSession && userProfile?.profile_complete && location.pathname.startsWith('/onboarding')) {
+    return <Navigate to="/" replace />;
+  }
+
+  // No profile at all — show role selection
+  if (userSession && !userProfile && !profileLoading) {
+    return <RoleSelect userId={userSession.id} onComplete={(profile) => setUserProfile(profile)} />;
+  }
+
+  // Has profile but onboarding not complete — redirect to the correct onboarding form
+  if (userSession && userProfile && !userProfile.profile_complete) {
+    const onboardingPath = userProfile.role === 'doctor' ? '/onboarding/doctor' : '/onboarding/patient';
+    if (!location.pathname.startsWith('/onboarding')) {
+       return <Navigate to={onboardingPath} replace />;
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-[#0A0F1E] flex flex-col text-slate-100">
+      {/* HEADER */}
+      <header className="bg-[#0A0F1E] border-b border-[#1F2937] sticky top-0 z-50">
+        <div className="max-w-[1440px] mx-auto px-4 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-600 to-blue-600 flex items-center justify-center shadow-lg shadow-violet-500/20">
+              <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </svg>
+            </div>
+            <div className="flex flex-col">
+              <h1 className="text-white font-black text-lg leading-none tracking-tight">
+                RetinaScan <span className="text-violet-500">AI</span>
+              </h1>
+              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1 hidden sm:block">
+                DR Screening Portal
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <InstallButton />
+            <BackendIndicator />
+            <OfflineIndicator />
+            <div className="h-6 w-px bg-[#1F2937] mx-1 hidden sm:block"></div>
+            
+            <div className="relative">
+              <button
+                onClick={() => setMenuOpen(!menuOpen)}
+                className="flex items-center justify-center w-10 h-10 rounded-xl bg-[#1F2937] border border-[#374151] text-slate-300 hover:bg-[#374151] hover:text-white transition-all group"
+                title="Account Menu"
+              >
+                <svg className="w-5 h-5 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                </svg>
+              </button>
+
+              {menuOpen && (
+                <>
+                  <div 
+                    className="fixed inset-0 z-[90]" 
+                    onClick={() => setMenuOpen(false)}
+                  />
+                  <div className="absolute right-0 top-full mt-2 w-48 bg-[#0A0F1E] rounded-2xl shadow-2xl shadow-black/80 border border-[#1F2937] overflow-hidden z-[100] animate-fade-in flex flex-col">
+                    <NavLink to="/profile" onClick={() => setMenuOpen(false)} className="flex items-center gap-3 px-4 py-3 text-xs font-bold text-slate-300 hover:bg-[#1F2937] hover:text-white transition-colors">
+                      <svg className='w-4 h-4' fill='none' viewBox='0 0 24 24' stroke='currentColor'><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d='M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' /></svg>
+                      My Profile
+                    </NavLink>
+                    <a href="mailto:support@retinascan.ai?subject=Feedback" onClick={() => setMenuOpen(false)} className="flex items-center gap-3 px-4 py-3 text-xs font-bold text-slate-300 hover:bg-[#1F2937] hover:text-white transition-colors border-t border-[#1F2937]/50">
+                      <svg className='w-4 h-4' fill='none' viewBox='0 0 24 24' stroke='currentColor'><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d='M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z' /></svg>
+                      Feedback
+                    </a>
+                    <button onClick={() => { setMenuOpen(false); logout(); }} className="w-full flex items-center gap-3 px-4 py-3 text-xs font-bold text-red-400 hover:bg-red-500/10 transition-colors border-t border-[#1F2937]">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+                      Sign Out
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="border-t border-[#1F2937]/50 bg-[#0A0F1E]/50 backdrop-blur-md hidden md:block">
+          <nav className="max-w-[1440px] mx-auto flex items-center gap-1 px-4 py-2">
+            {navItems.map(({ to, label }) => (
+              <NavLink
+                key={to}
+                to={to}
+                end={to === '/'}
+                className={({ isActive }) =>
+                  `px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-all ${
+                    isActive
+                      ? 'bg-violet-600 text-white shadow-lg shadow-violet-900/40'
+                      : 'text-slate-500 hover:text-slate-300 hover:bg-[#1F2937]'
+                  }`
+                }
+              >
+                {label}
+              </NavLink>
+            ))}
+          </nav>
+        </div>
+      </header>
+
+      {/* MAIN */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6 pb-24 md:pb-8">
+        <Suspense fallback={<div className="flex items-center justify-center p-20"><div className="w-10 h-10 border-4 border-violet-600 border-t-transparent rounded-full animate-spin"></div></div>}>
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/scan" element={<Scanner />} />
+            <Route path="/results" element={<ResultsView />} />
+            <Route path="/camp" element={<CampDashboard />} />
+            <Route path="/business" element={<BusinessModel />} />
+            <Route path="/validation" element={<ValidationMetrics />} />
+            <Route path="/yolo-results" element={<YoloResultsPage />} />
+            <Route path="/doctor" element={
+              userProfile?.role === 'doctor' 
+                ? <DoctorPortal /> 
+                : <Navigate to="/" replace />
+            } />
+            <Route path="/reset-password" element={<ResetPassword />} />
+            
+            <Route path='/onboarding/doctor' element={<DoctorOnboarding userId={userSession?.id} onComplete={setUserProfile} />} />
+            <Route path='/onboarding/patient' element={<PatientOnboarding userId={userSession?.id} onComplete={setUserProfile} />} />
+            <Route path='/find-doctors' element={<FindDoctors />} />
+            <Route path='/profile' element={<ProfilePage userId={userSession?.id} profile={userProfile} onUpdate={setUserProfile} />} />
+            
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
+      </main>
+
+      {/* FOOTER (desktop only) */}
+      <footer className="border-t border-[#1F2937] bg-[#0A0F1E] py-4 text-center hidden md:block">
+        <p className="text-[10px] font-bold text-slate-600 uppercase tracking-[0.3em]">
+          © 2026 RetinaScan AI • Precision DR Diagnostics
+        </p>
+      </footer>
+
+      {/* MOBILE BOTTOM NAV */}
+      {(() => {
+        const I_HOME = <svg className="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>;
+        const I_SCAN = <svg className="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>;
+        const I_DOC = <svg className="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>;
+        const I_HIST = <svg className="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>;
+        const I_PROF = <svg className="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>;
+
+        // Build mobile nav based on role
+        const mobileNavItems = isDoctor
+          ? [
+              { to: '/', label: 'Home', icon: I_HOME },
+              { to: '/scan', label: 'Scan', icon: I_SCAN },
+              { to: '/doctor', label: 'Review', icon: I_DOC },
+              { to: '/camp', label: 'Records', icon: I_HIST },
+              { to: '/profile', label: 'Profile', icon: I_PROF },
+            ]
+          : isPatient
+          ? [
+              { to: '/', label: 'Home', icon: I_HOME },
+              { to: '/scan', label: 'Scan', icon: I_SCAN },
+              { to: '/find-doctors', label: 'Doctors', icon: I_DOC },
+              { to: '/camp', label: 'History', icon: I_HIST },
+              { to: '/profile', label: 'Profile', icon: I_PROF },
+            ]
+          : [
+              { to: '/', label: 'Home', icon: I_HOME },
+              { to: '/scan', label: 'Scan', icon: I_SCAN },
+              { to: '/camp', label: 'Records', icon: I_HIST },
+              { to: '/profile', label: 'Profile', icon: I_PROF },
+            ];
+
+        return (
+          <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-[#0A0F1E]/95 backdrop-blur-lg border-t border-[#1F2937] safe-area-bottom">
+            <div className="flex items-center justify-around py-2 px-1">
+              {mobileNavItems.map(({ to, label, icon }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  end={to === '/'}
+                  className={({ isActive }) =>
+                    `flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl transition-all ${
+                      isActive ? 'text-violet-400' : 'text-slate-600 hover:text-slate-400'
+                    }`
+                  }
+                >
+                  <span className="text-lg leading-none">{icon}</span>
+                  <span className="text-[9px] font-black uppercase tracking-tighter leading-none mt-0.5">{label}</span>
+                </NavLink>
+              ))}
+            </div>
+          </nav>
+        );
+      })()}
+
+      {showUpdateToast && (
+        <UpdateToast wb={waitingServiceWorker} onDismiss={() => setShowUpdateToast(false)} />
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   const [waitingServiceWorker, setWaitingServiceWorker] = useState(null);
   const [showUpdateToast, setShowUpdateToast] = useState(false);
   const [userSession, setUserSession] = useState(null);
+  
+  const [userProfile, setUserProfile] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(true);
 
-  /**
-   * Effect: Auth State Listener
-   * Initial check for current user and subscription to auth state changes in Supabase.
-   */
+  async function loadUserProfile(userId) {
+    if (!userId) { setProfileLoading(false); return; }
+    
+    // Attempt local cache first for instant load
+    const cached = localStorage.getItem(`rs_profile_${userId}`);
+    if (cached) setUserProfile(JSON.parse(cached));
+
+    const safetyTimeout = setTimeout(() => {
+      console.warn('Profile load timed out, falling back to cache');
+      setProfileLoading(false);
+    }, 5000);
+    try {
+      if (!navigator.onLine) throw new Error('Offline');
+      const { data, error } = await supabase.from('profiles')
+        .select('*').eq('id', userId).maybeSingle();
+      if (error) throw error;
+      if (data) {
+        localStorage.setItem(`rs_profile_${userId}`, JSON.stringify(data));
+        setUserProfile(data);
+      } else if (!cached) {
+        setUserProfile(null);
+      }
+    } catch (e) {
+      console.error('Profile fetch failed, using cache:', e.message);
+      if (!cached) setUserProfile(null);
+    } finally {
+      clearTimeout(safetyTimeout);
+      setProfileLoading(false);
+    }
+  }
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       setUserSession(data?.user ?? null);
       if (data?.user) {
-        syncPatientsFromCloud(); // Restore data on mount
+         syncPatientsFromCloud();
+         loadUserProfile(data.user.id);
+      } else {
+         setProfileLoading(false);
       }
     });
 
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setUserSession(session?.user ?? null);
-        if (session?.user) {
-          syncPatientsFromCloud(); // Restore data on login
-        }
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUserSession(session?.user ?? null);
+      if (session?.user) {
+         syncPatientsFromCloud();
+         loadUserProfile(session.user.id);
+      } else {
+         setUserProfile(null);
+         setProfileLoading(false);
       }
-    );
+    });
 
-    return () => {
-      authListener.subscription.unsubscribe();
-    };
+    return () => authListener.subscription.unsubscribe();
   }, []);
 
-  /**
-   * Effect: Service Worker Update Listener
-   * Listens for custom 'sw:update-available' event to prompt user for a refresh.
-   */
   useEffect(() => {
     const handleSWUpdate = (event) => {
       setWaitingServiceWorker(event.detail);
@@ -144,136 +411,31 @@ export default function App() {
     return () => window.removeEventListener('sw:update-available', handleSWUpdate);
   }, []);
 
-  /**
-   * Effect: Online Sync Listener
-   * Automatically flushes the IndexedDB sync queue when the application regains internet connectivity.
-   */
   useEffect(() => {
-    const handleOnlineStatus = () => {
-      console.log("🌐 Application back online. Syncing queued requests...");
-      flushSyncQueue();
-    };
-
+    const handleOnlineStatus = () => flushSyncQueue();
     window.addEventListener('online', handleOnlineStatus);
-
-    return () => {
-      window.removeEventListener('online', handleOnlineStatus);
-    };
+    return () => window.removeEventListener('online', handleOnlineStatus);
   }, []);
 
-  /**
-   * Effect: Backend Keep-Alive Ping
-   * Pings the backend /health endpoint every 10 minutes to prevent Render free tier
-   * from spinning down. Also fires immediately on app load to wake the server early,
-   * so the first scan doesn't hit a cold start delay.
-   */
   useEffect(() => {
     const BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
     const ping = () => fetch(`${BACKEND}/health`, { mode: 'no-cors' }).catch(() => {});
-    // Wake the backend immediately when the app opens
     ping();
-    // Then keep it warm every 10 minutes
     const keepAliveTimer = setInterval(ping, 10 * 60 * 1000);
     return () => clearInterval(keepAliveTimer);
   }, []);
 
-  // Guard: Redirect to Authentication if no user session exists
-  if (!userSession) {
-    return <Auth />;
-  }
-
   return (
     <BrowserRouter>
-      <div className="min-h-screen bg-slate-900 flex flex-col text-slate-100">
-
-        {/* HEADER */}
-        <header className="bg-slate-950 border-b border-slate-800 sticky top-0 z-50">
-
-          {/* Row 1: Logo + Action Buttons */}
-          <div className="max-w-[1400px] mx-auto px-2 sm:px-4 h-14 flex items-center justify-between">
-
-            <div className="flex items-center gap-2 sm:gap-3 shrink min-w-0 pr-2">
-              <div className="w-8 h-8 rounded-lg bg-blue-600 flex shrink-0 items-center justify-center shadow-lg shadow-blue-500/30">
-                <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-              </div>
-              <div className="flex flex-col justify-center min-w-0">
-                <div className="text-white font-black text-[13px] sm:text-base leading-tight tracking-tight truncate">
-                  RetinaScan <span className="text-blue-500">AI</span>
-                </div>
-                <div className="text-[10px] text-slate-400 font-semibold leading-none mt-0.5 hidden sm:block truncate">
-                  Diabetic Retinopathy Screening
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-              <InstallButton />
-              <BackendIndicator />
-              <OfflineIndicator />
-              <button
-                onClick={logout}
-                className="flex items-center justify-center w-8 h-8 sm:w-auto sm:px-3 sm:py-1.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 transition-all shrink-0"
-                title="Logout"
-              >
-                <svg className="w-4 h-4 sm:mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                </svg>
-                <span className="hidden sm:inline text-xs font-bold">Logout</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Row 2: Scrollable Nav Tabs (visible on all screen sizes) */}
-          <div className="border-t border-slate-800/60 overflow-x-auto scrollbar-hide">
-            <nav className="flex items-center gap-1 px-4 py-1.5 min-w-max">
-              {NAVIGATION_ITEMS.map(({ to, label }) => (
-                <NavLink
-                  key={to}
-                  to={to}
-                  end={to === '/'}
-                  className={({ isActive }) =>
-                    `px-4 py-1.5 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${
-                      isActive
-                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40'
-                        : 'text-slate-400 hover:text-white'
-                    }`
-                  }
-                >
-                  {label}
-                </NavLink>
-              ))}
-            </nav>
-          </div>
-
-        </header>
-
-
-        {/* MAIN */}
-        <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6">
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/scan" element={<Scanner />} />
-            <Route path="/results" element={<ResultsView />} />
-            <Route path="/camp" element={<CampDashboard />} />
-            <Route path="/business" element={<BusinessModel />} />
-            <Route path="/validation" element={<ValidationMetrics />} />
-            <Route path="/yolo-results" element={<YoloResultsPage />} />
-            <Route path="/doctor" element={<DoctorPortal />} />
-          </Routes>
-        </main>
-
-        {/* FOOTER */}
-        <footer className="border-t border-slate-800 bg-slate-950 py-3 text-center text-xs text-slate-500">
-          © 2026 RetinaScan AI
-        </footer>
-
-        {showUpdateToast && (
-          <UpdateToast wb={waitingServiceWorker} onDismiss={() => setShowUpdateToast(false)} />
-        )}
-      </div>
+      <AppContent 
+        userSession={userSession}
+        userProfile={userProfile}
+        setUserProfile={setUserProfile}
+        profileLoading={profileLoading}
+        waitingServiceWorker={waitingServiceWorker}
+        showUpdateToast={showUpdateToast}
+        setShowUpdateToast={setShowUpdateToast}
+      />
     </BrowserRouter>
   );
-}
+}

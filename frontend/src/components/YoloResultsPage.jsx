@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
-// -- Bounding-box overlay for one eye --
+
 function EyeCanvas({ imageUrl, yolo, label, accentClass }) {
     const [showBoxes, setShowBoxes] = useState(true);
 
@@ -90,15 +90,17 @@ const YoloResultsPage = () => {
     const location = useLocation();
     const navigate = useNavigate();
 
-    const { result, imagePreview, patient } = location.state || {};
-
-    // Support both dual-eye record format and legacy single-eye
+    const { result, imagePreview } = location.state || {};
     const record = location.state?.record;
 
     const odImage = imagePreview || record?.rightEye?.image_url;
     const osImage = record?.leftEye?.image_url;
-    const odYolo  = result?.yolo || record?.rightEye?.yoloDetections;
-    const osYolo  = record?.leftEye?.yoloDetections;
+
+    // YOLO detections come entirely from the client-side onnxruntime-web worker.
+    // The model.worker.js runs yolo_lesions.onnx in-browser during the scan.
+    // No backend call is made — this page is 100% offline-capable.
+    const odYolo = result?.yolo || record?.rightEye?.yoloDetections;
+    const osYolo = record?.leftEye?.yoloDetections;
 
     if (!odImage) {
         return (
@@ -200,7 +202,18 @@ const YoloResultsPage = () => {
                                 </div>
                             ))}
                             {totalLesions === 0 && (
-                                <p className="text-center py-6 text-slate-500 italic text-sm">No lesions detected.</p>
+                                <div className='p-4 bg-amber-900/20 border border-amber-700/40 rounded-xl'>
+                                    <p className='text-amber-400 font-bold text-sm mb-1'>
+                                        Why 0 lesions with Grade 4?
+                                    </p>
+                                    <p className='text-slate-400 text-xs leading-relaxed'>
+                                        The DR grade (0–4) comes from EfficientNetB3 which analyses the full
+                                        retinal image globally. YOLO is a separate model that detects specific
+                                        lesion locations. Both are independent — Grade 4 with 0 YOLO detections
+                                        is medically valid. YOLO may miss lesions if the image resolution is
+                                        low or confidence threshold (25%) is not reached.
+                                    </p>
+                                </div>
                             )}
                         </div>
                     </div>

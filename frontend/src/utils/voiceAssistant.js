@@ -2,14 +2,15 @@
 
 /**
  * List of languages supported for localized voice feedback.
+ * These languages work for both PDF reports and voice assistant.
  */
 export const SUPPORTED_LANGUAGES = [
-    { code: 'ta-IN', label: 'Tamil' },
-    { code: 'hi-IN', label: 'Hindi' },
-    { code: 'te-IN', label: 'Telugu' },
-    { code: 'kn-IN', label: 'Kannada' },
-    { code: 'ml-IN', label: 'Malayalam' },
     { code: 'en-IN', label: 'English' },
+    { code: 'hi-IN', label: 'Hindi (हिंदी)' },
+    { code: 'ta-IN', label: 'Tamil (தமிழ்)' },
+    { code: 'te-IN', label: 'Telugu (తెలుగు)' },
+    { code: 'kn-IN', label: 'Kannada (ಕನ್ನಡ)' },
+    { code: 'ml-IN', label: 'Malayalam (മലയാളം)' },
 ];
 
 /**
@@ -21,9 +22,15 @@ export const SUPPORTED_LANGUAGES = [
  * @returns {string} The formatted script for text-to-speech.
  */
 export const generateScript = (patient, result, langCode) => {
-    const { name, age } = patient;
-    const { grade_label, confidence, urgency } = result;
-    const confidencePercentage = Math.round(confidence * 100);
+    if (!patient || !result) {
+        return "Diagnostic data is unavailable. Please perform a scan to generate a clinical history.";
+    }
+
+    const name = patient?.name || 'Patient';
+    const age = patient?.age || 'Unknown';
+    const grade_label = result?.grade_label || 'Analysis pending';
+    const confidencePercentage = Math.round((result?.confidence || 0) * 100);
+    const urgency = result?.urgency || 'Consult a specialist';
 
     switch (langCode) {
         case 'ta-IN': // Tamil
@@ -35,7 +42,7 @@ export const generateScript = (patient, result, langCode) => {
         case 'kn-IN': // Kannada
             return `ರೋಗಿಯ ಹೆಸರು: ${name}. ವಯಸ್ಸು: ${age}. ರೋಗನಿರ್ಣಯ: ${grade_label}. ವಿಶ್ವಾಸ: ${confidencePercentage} ಶೇಕಡಾ. ಶಿಫಾರಸು: ${urgency}.`;
         case 'ml-IN': // Malayalam
-            return `രോഗിയുടെ പേര്: ${name}. പ്രായം: ${age}. രോഗനിർണയം: ${grade_label}. ഉറപ്പ്: ${confidencePercentage} ശതമാനം. നിർദ്ദേശം: ${urgency}.`;
+            return `രോഗിയുടെ പേര്: ${name}. പ്രായം: ${age}. രോഗനിர்ണയം: ${grade_label}. ഉറപ്പ്: ${confidencePercentage} ശതമാനം. നിർദ്ദേശം: ${urgency}.`;
         case 'en-IN': // English
         default:
             return `Patient name: ${name}. Age: ${age}. Diagnosis: ${grade_label}. Artificial Intelligence Confidence: ${confidencePercentage} percent. Recommendation: ${urgency}.`;

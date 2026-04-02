@@ -11,7 +11,6 @@
 import { openDB } from "idb";
 import { supabase } from "../utils/supabaseClient";
 
-const DB_NAME = "RetinaScanDB";
 const DB_VERSION = 5;
 const PATIENTS_STORE = "patients";
 const SYNC_QUEUE_STORE = "sync_queue";
@@ -19,10 +18,55 @@ const DOCTOR_REVIEWS_STORE = "doctor_reviews";
 const AUDIT_LOG_STORE = "audit_log";
 
 /**
+ * Returns the current authenticated user's ID, or "anonymous" if not logged in.
+ * Used to scope the IndexedDB database per user for data isolation.
+ * @returns {Promise<string>}
+ */
+async function getDBName() {
+  const { data } = await supabase.auth.getUser();
+  const uid = data?.user?.id || "anonymous";
+  return `RetinaScanDB_${uid}`;
+}
+
+/**
+ * Uploads a retinal image (base64 data URL) to Supabase Storage.
+ * Returns the public cloud URL, or null if upload fails (non-fatal).
+ * @param {string} userId
+ * @param {string} patientId
+ * @param {string} base64DataUrl - data:image/jpeg;base64,...
+ * @param {string} eyeLabel - e.g. 'od_scan' or 'od_heatmap'
+ * @returns {Promise<string|null>}
+ */
+async function uploadRetinalImage(userId, patientId, base64DataUrl, eyeLabel) {
+  if (!base64DataUrl || !base64DataUrl.startsWith('data:image')) return null;
+  try {
+    const base64 = base64DataUrl.split(',')[1];
+    const binary = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+    const blob = new Blob([binary], { type: 'image/jpeg' });
+    const fileName = `${userId}/${patientId}_${eyeLabel}.jpg`;
+    const { error: uploadError } = await supabase.storage
+      .from('patient-scans')
+      .upload(fileName, blob, { upsert: true, contentType: 'image/jpeg' });
+    if (uploadError) {
+      console.warn('[Storage] Image upload error:', uploadError.message);
+      return null;
+    }
+    const { data: urlData } = supabase.storage
+      .from('patient-scans')
+      .getPublicUrl(fileName);
+    return urlData?.publicUrl || null;
+  } catch (err) {
+    console.warn('[Storage] Image upload failed (non-fatal):', err.message);
+    return null;
+  }
+}
+
+/**
  * Initializes and returns the IndexedDB instance, performing migrations if needed.
  * @returns {Promise<IDBDatabase>}
  */
 async function getDB() {
+  const DB_NAME = await getDBName(); // user-scoped!
   return openDB(DB_NAME, DB_VERSION, {
     upgrade(db, oldVersion) {
       // Ensure patients store exists in v1 or v3 rescue
@@ -83,18 +127,62 @@ export async function savePatient(patientRecord) {
 
     if (!user) throw new Error("No user");
 
+    // Duplicate check: skip insert if this patient_id already exists for this user
+    const patientIdToCheck = patientRecord.patientId || patientRecord.id || '';
+    if (patientIdToCheck) {
+      const { data: existing } = await supabase
+        .from('patients')
+        .select('id')
+        .eq('patient_id', patientIdToCheck)
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (existing) {
+        console.log('[savePatient] Duplicate blocked:', patientIdToCheck);
+        return; // already saved — stop here
+      }
+    }
+
+    // Upload all 4 retinal images to Supabase Storage in parallel.
+    // od = right eye, os = left eye; _scan = original, _heatmap = AI overlay.
+    const pid = patientRecord.patientId || patientRecord.id;
+
+    const odImageBase64   = patientRecord.rightEye?.image_url   || patientRecord.imagePreview || null;
+    const osImageBase64   = patientRecord.leftEye?.image_url    || null;
+    const odHeatmapBase64 = patientRecord.rightEye?.heatmap_url || patientRecord.heatmap_url  || null;
+    const osHeatmapBase64 = patientRecord.leftEye?.heatmap_url  || null;
+
+    const [odImageUrl, osImageUrl, odHeatmapUrl, osHeatmapUrl] = await Promise.all([
+      uploadRetinalImage(user.id, pid, odImageBase64,   'od_scan'),
+      uploadRetinalImage(user.id, pid, osImageBase64,   'os_scan'),
+      uploadRetinalImage(user.id, pid, odHeatmapBase64, 'od_heatmap'),
+      uploadRetinalImage(user.id, pid, osHeatmapBase64, 'os_heatmap'),
+    ]);
+
     // Try saving to Supabase
     const { error } = await supabase.from("patients").insert([
       {
         user_id: user.id,
-        name: patientRecord.name || "Unknown",
+        name: patientRecord.name || 'Unknown',
         age: Number(patientRecord.age) || 0,
-        gender: patientRecord.gender || "",
-        diagnosis: patientRecord.diagnosis || "",
+        gender: patientRecord.gender || '',
+        diagnosis: patientRecord.diagnosis || '',
         grade: patientRecord.grade,
         confidence: patientRecord.confidence,
-        risk: patientRecord.risk || "LOW",
+        risk: patientRecord.risk || 'LOW',
+        patient_id: patientRecord.patientId || patientRecord.id || '',
+        contact: patientRecord.contact || '',
+        diabetic_since: Number(patientRecord.diabeticSince) || 0,
+        risk_score: patientRecord.risk_score || 0,
+        urgency: patientRecord.urgency || '',
         created_at: patientRecord.timestamp || new Date().toISOString(),
+        // Legacy single columns — kept for backward compat
+        image_url:   odImageUrl,
+        heatmap_url: odHeatmapUrl,
+        // New per-eye columns
+        od_image_url:   odImageUrl,
+        os_image_url:   osImageUrl,
+        od_heatmap_url: odHeatmapUrl,
+        os_heatmap_url: osHeatmapUrl,
       },
     ]);
 
@@ -140,7 +228,8 @@ export async function syncPatientsFromCloud() {
     // Merge them down to local storage
     for (const cp of cloudPatients) {
       const localRecord = {
-        id: cp.id.toString(), // Supabase's PK acts as the local IndexedDB key
+        id: cp.patient_id || cp.id.toString(), // Prefer string TN-ID over Postgres integer
+        patientId: cp.patient_id || cp.id.toString(),
         name: cp.name,
         age: cp.age,
         gender: cp.gender,
@@ -148,8 +237,21 @@ export async function syncPatientsFromCloud() {
         grade: cp.grade,
         confidence: cp.confidence,
         risk: cp.risk,
+        risk_score: cp.risk_score || 0,
+        urgency: cp.urgency || '',
+        contact: cp.contact || '',
+        diabeticSince: cp.diabetic_since || 0,
         timestamp: cp.created_at,
-        isFromCloud: true // Marks it as missing massive image blobs
+        isFromCloud: true,
+        user_id: user.id,
+        // Legacy single columns
+        image_url:   cp.image_url   || null,
+        heatmap_url: cp.heatmap_url || null,
+        // Per-eye cloud URLs — used by DoctorPortal, CampDashboard, ResultsView
+        od_image_url:   cp.od_image_url   || cp.image_url   || null,
+        os_image_url:   cp.os_image_url   || null,
+        od_heatmap_url: cp.od_heatmap_url || cp.heatmap_url || null,
+        os_heatmap_url: cp.os_heatmap_url || null,
       };
       // put() overwrites locally if id matches, otherwise creates new entry
       await store.put(localRecord);
@@ -168,8 +270,12 @@ export async function syncPatientsFromCloud() {
  */
 export async function getAllPatients() {
   const db = await getDB();
+  const { data } = await supabase.auth.getUser();
+  const uid = data?.user?.id;
   const patients = await db.getAll(PATIENTS_STORE);
-  return patients.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  // Double-filter by user_id for extra safety (DB is already user-scoped)
+  const filtered = uid ? patients.filter(p => !p.user_id || p.user_id === uid) : patients;
+  return filtered.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 }
 
 /**
@@ -177,7 +283,7 @@ export async function getAllPatients() {
  * @param {string|number} id - The unique ID of the patient.
  * @returns {Promise<Object|undefined>} The patient record if found.
  */
-export async function getPatient(id) {
+export async function getPatientById(id) {
   const db = await getDB();
   return db.get(PATIENTS_STORE, id);
 }
@@ -257,17 +363,62 @@ export async function flushSyncQueue() {
 
         if (!user) throw new Error("No user session");
 
+        const patientRecord = item.body;
+        const pid = patientRecord.patientId || patientRecord.id;
+
+        // 1. Duplicate check
+        if (pid) {
+          const { data: existingRecord } = await supabase
+            .from('patients')
+            .select('id')
+            .eq('patient_id', pid)
+            .eq('user_id', user.id)
+            .maybeSingle();
+          if (existingRecord) {
+            console.log('[flushSyncQueue] Duplicate blocked:', pid);
+            await dequeueRequest(item.id);
+            succeededCount++;
+            continue;
+          }
+        }
+
+        // 2. Upload images if they are still base64 (offline-captured)
+        const odImageBase64   = patientRecord.rightEye?.image_url   || patientRecord.image_url   || patientRecord.imagePreview || null;
+        const osImageBase64   = patientRecord.leftEye?.image_url    || patientRecord.os_image_url || null;
+        const odHeatmapBase64 = patientRecord.rightEye?.heatmap_url || patientRecord.heatmap_url || null;
+        const osHeatmapBase64 = patientRecord.leftEye?.heatmap_url  || patientRecord.os_heatmap_url || null;
+
+        const [odImageUrl, osImageUrl, odHeatmapUrl, osHeatmapUrl] = await Promise.all([
+          uploadRetinalImage(user.id, pid, odImageBase64,   'od_scan'),
+          uploadRetinalImage(user.id, pid, osImageBase64,   'os_scan'),
+          uploadRetinalImage(user.id, pid, odHeatmapBase64, 'od_heatmap'),
+          uploadRetinalImage(user.id, pid, osHeatmapBase64, 'os_heatmap'),
+        ]);
+
+        // 3. Insert into Supabase
         const { error } = await supabase.from("patients").insert([
           {
             user_id: user.id,
-            name: item.body.name || "Unknown",
-            age: Number(item.body.age) || 0,
-            gender: item.body.gender || "",
-            diagnosis: item.body.diagnosis || "",
-            grade: item.body.grade,
-            confidence: item.body.confidence,
-            risk: item.body.risk || "LOW",
-            created_at: item.body.timestamp || new Date().toISOString(),
+            name: patientRecord.name || 'Unknown',
+            age: Number(patientRecord.age) || 0,
+            gender: patientRecord.gender || '',
+            diagnosis: patientRecord.diagnosis || '',
+            grade: patientRecord.grade,
+            confidence: patientRecord.confidence,
+            risk: patientRecord.risk_level || patientRecord.risk || 'LOW',
+            patient_id: pid || '',
+            contact: patientRecord.contact || '',
+            diabetic_since: Number(patientRecord.diabeticSince) || 0,
+            risk_score: patientRecord.risk_score || 0,
+            urgency: patientRecord.urgency || '',
+            created_at: patientRecord.timestamp || new Date().toISOString(),
+            // Map the cloud-uploaded URLs
+            image_url:   odImageUrl,
+            heatmap_url: odHeatmapUrl,
+            od_image_url:   odImageUrl,
+            os_image_url:   osImageUrl,
+            od_heatmap_url: odHeatmapUrl,
+            os_heatmap_url: osHeatmapUrl,
           },
         ]);
 

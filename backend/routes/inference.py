@@ -13,29 +13,15 @@ router = APIRouter()
 # ─── ONNX Model Paths ────────────────────────────────────────────────────────
 MODEL_DIR = Path(__file__).parent.parent / 'models'
 GRADING_MODEL = str(MODEL_DIR / 'retina_model.onnx')
-LESION_MODEL  = str(MODEL_DIR / 'yolo_lesions.onnx')
 
 # ─── Session Cache (load once on first call, reuse on all subsequent calls) ──
 _grading_session = None
-_lesion_session  = None
 
 def get_grading_session():
     global _grading_session
     if _grading_session is None:
         _grading_session = ort.InferenceSession(GRADING_MODEL, providers=['CPUExecutionProvider'])
     return _grading_session
-
-def get_lesion_session():
-    global _lesion_session
-    if _lesion_session is None:
-        _lesion_session = ort.InferenceSession(LESION_MODEL, providers=['CPUExecutionProvider'])
-    return _lesion_session
-
-YOLO_CLASSES = [
-    "External Bleeding",
-    "Exudates / Cotton Wool Spots / Retinal Scarring",
-    "Microaneurysms / Hemorrhages"
-]
 
 # ─── Real EfficientNetB3 Grading ─────────────────────────────────────────────
 def run_grading(image_rgb: np.ndarray) -> dict:
@@ -72,66 +58,8 @@ def run_grading(image_rgb: np.ndarray) -> dict:
     }
 
 
-def run_yolo(image_rgb: np.ndarray) -> dict:
-    """Run YOLOv8 ONNX inference for lesion detection."""
-    img = cv2.resize(image_rgb, (1024, 1024))
-    img = img.astype(np.float32) / 255.0
-    tensor = img.transpose(2, 0, 1)
-    tensor = np.expand_dims(tensor, 0)
-
-    sess = get_lesion_session()
-    # Explicitly use 'images' as input name for YOLOv8
-    input_name = sess.get_inputs()[0].name
-    outputs = sess.run(None, {input_name: tensor})
-    
-    # YOLOv8 output handling [1, 7, 21504] or [1, 21504, 7]
-    raw_output = outputs[0][0]
-    if raw_output.shape[0] < raw_output.shape[1]:
-        # Normal shape [7, 21504]
-        output = raw_output
-    else:
-        # Transposed shape [21504, 7]
-        output = raw_output.T
-
-    boxes_tensor = output[:4, :]  # [4, 21504]
-    scores_tensor = output[4:, :]  # [3, 21504]
-
-    max_scores = np.max(scores_tensor, axis=0)
-    class_ids = np.argmax(scores_tensor, axis=0)
-
-    mask = max_scores > 0.25
-    valid_boxes = boxes_tensor[:, mask].T  # [N, 4]
-    valid_scores = max_scores[mask]
-    valid_class_ids = class_ids[mask]
-
-    boxes = []
-    for i in range(len(valid_scores)):
-        cx, cy, w, h = valid_boxes[i]
-        x1 = cx - (w / 2)
-        y1 = cy - (h / 2)
-        boxes.append([float(x1), float(y1), float(w), float(h)])
-
-    scores = valid_scores.tolist()
-
-    detections = []
-    if len(boxes) > 0:
-        indices = cv2.dnn.NMSBoxes(boxes, scores, 0.25, 0.45)
-        if len(indices) > 0:
-            for i in np.array(indices).flatten():
-                idx = int(i)
-                x1, y1, w, h = boxes[idx]
-                detections.append({
-                    "bbox": [x1, y1, x1 + w, y1 + h],
-                    "class_id": int(valid_class_ids[idx]),
-                    "class_name": YOLO_CLASSES[int(valid_class_ids[idx])],
-                    "confidence": float(scores[idx])
-                })
-
-    return {
-        "detections": detections,
-        "image_shape": [1024, 1024],
-        "count": len(detections)
-    }
+# YOLO lesion detection has been removed from backend to save memory.
+# Detections now run exclusively client-side in the browser.
 
 
 def is_blurry(image_np: np.ndarray, threshold: float = 100.0) -> bool:
@@ -214,7 +142,7 @@ def generate_mock_heatmap(image_np: np.ndarray) -> str:
 @router.post("/")
 async def run_inference(
     file: UploadFile = File(...),
-    skip_yolo: bool = Query(default=True, description="Skip YOLO lesion detection for faster grading-only response")
+    skip_yolo: bool = Query(False)
 ):
     # 1. Read image bytes
     contents = await file.read()
@@ -235,19 +163,15 @@ async def run_inference(
     try:
         result = run_grading(image_rgb)
     except Exception as e:
-        result = get_demo_result(file.filename)
-        result['_note'] = f'ONNX fallback: {str(e)}'
+        import traceback
+        print(f'[ONNX ERROR] {traceback.format_exc()}')
+        raise HTTPException(
+            status_code=500,
+            detail=f'AI model inference failed: {str(e)}. Please retry or contact support.'
+        )
 
-    # 4. YOLO lesion detection (slow: ~30-40s on CPU at 1024×1024)
-    # Only run when explicitly requested (e.g. from the Lesion Analysis page)
-    if not skip_yolo:
-        try:
-            yolo_result = run_yolo(image_rgb)
-        except Exception as e:
-            yolo_result = {"detections": [], "image_shape": [1024, 1024], "count": 0}
-    else:
-        # Return empty detections — YOLO results page will re-request with skip_yolo=false
-        yolo_result = {"detections": [], "image_shape": [1024, 1024], "count": 0}
+    # 4. YOLO lesion detection (Removed from backend, empty results returned)
+    yolo_result = {"detections": [], "image_shape": [1024, 1024], "count": 0}
 
     # 5. Generate Heatmap
     heatmap_input = (image_rgb[:,:,:3]).astype(np.uint8)
@@ -266,17 +190,11 @@ async def run_inference(
     return response
 
 
-def _warmup_models():
-    """Pre-load both ONNX sessions at startup so first request is fast."""
+# Optimization: Disable model pre-loading on Render/OOM environments.
+# To enable warmup, define an environment variable WARMUP_MODELS=true.
+if os.environ.get('WARMUP_MODELS') == 'true':
     try:
-        if os.path.exists(GRADING_MODEL):
-            get_grading_session()
-            print(f"Grading model loaded: {GRADING_MODEL}")
-        
-        if os.path.exists(LESION_MODEL):
-            get_lesion_session()
-            print(f"Lesion model loaded: {LESION_MODEL}")
+        get_grading_session()
+        print(f"Grading model pre-loaded: {GRADING_MODEL}")
     except Exception as e:
         print(f"WARNING: Could not preload models: {e}")
-
-_warmup_models()

@@ -183,8 +183,86 @@ function generateSobelHeatmap(imageData) {
 
 self.onmessage = async (e) => {
     const { type, tensorData, imageData, filename } = e.data;
-    if (type !== 'INFERENCE') return;
+    if (type !== 'INFERENCE' && type !== 'YOLO_ONLY') return;
 
+    // ── YOLO_ONLY path: run YOLOv8 only (no grading, no heatmap) ────────────
+    // Called by modelInference.js after a backend grading scan to get local
+    // lesion detections without running the slow EfficientNet + ScoreCAM chain.
+    if (type === 'YOLO_ONLY') {
+        try {
+            self.postMessage({ type: 'STATUS', message: 'Loading Lesion Model...' });
+            const options = { executionProviders: ['wasm'] };
+            const lesionSession = await ort.InferenceSession.create('/models/yolo_lesions.onnx', options);
+            self.postMessage({ type: 'STATUS', message: 'Running Lesion Detection...' });
+
+            const YSIZE = 1024; // CRITICAL: must stay 1024
+            const canvasYOLO = new OffscreenCanvas(YSIZE, YSIZE);
+            const ctxYOLO = canvasYOLO.getContext('2d');
+            const bitmap = await createImageBitmap(imageData);
+            ctxYOLO.drawImage(bitmap, 0, 0, YSIZE, YSIZE);
+            bitmap.close();
+
+            const rawYOLO = ctxYOLO.getImageData(0, 0, YSIZE, YSIZE).data;
+            const floatYOLO = new Float32Array(3 * YSIZE * YSIZE);
+            for (let i = 0; i < YSIZE * YSIZE; i++) {
+                floatYOLO[i] = rawYOLO[i * 4] / 255.0;
+                floatYOLO[i + YSIZE * YSIZE] = rawYOLO[i * 4 + 1] / 255.0;
+                floatYOLO[i + 2 * YSIZE * YSIZE] = rawYOLO[i * 4 + 2] / 255.0;
+            }
+
+            const inputYOLO = new ort.Tensor('float32', floatYOLO, [1, 3, YSIZE, YSIZE]);
+            const resYOLO = await lesionSession.run({ images: inputYOLO });
+            const output = resYOLO.output0.data;
+
+            const numClasses = 3;
+            const numAnchors = output.length / (4 + numClasses);
+            const boxes = [], scores = [], classIds = [];
+
+            for (let i = 0; i < numAnchors; i++) {
+                let bestScore = -1, bestClass = -1;
+                for (let c = 0; c < numClasses; c++) {
+                    const s = output[numAnchors * (4 + c) + i];
+                    if (s > bestScore) { bestScore = s; bestClass = c; }
+                }
+                if (bestScore > 0.25) {
+                    const cx = output[i];
+                    const cy = output[numAnchors + i];
+                    const w  = output[numAnchors * 2 + i];
+                    const h  = output[numAnchors * 3 + i];
+                    boxes.push([
+                        (cx - w / 2) * (imageData.width  / 1024),
+                        (cy - h / 2) * (imageData.height / 1024),
+                        (cx + w / 2) * (imageData.width  / 1024),
+                        (cy + h / 2) * (imageData.height / 1024)
+                    ]);
+                    scores.push(bestScore);
+                    classIds.push(bestClass);
+                }
+            }
+
+            const indices = nms(boxes, scores);
+            const detections = indices.map(idx => ({
+                class_name: YOLO_CLASSES[classIds[idx]],
+                class_id:   classIds[idx],
+                confidence: scores[idx],
+                bbox:       boxes[idx]
+            }));
+
+            self.postMessage({
+                type: 'YOLO_RESULT',
+                yolo: {
+                    detections,
+                    num_detections: detections.length,
+                    image_shape: [imageData.height, imageData.width]
+                }
+            });
+        } catch (err) {
+            self.postMessage({ type: 'YOLO_ERROR', error: err.message });
+        }
+        return;
+    }
+
+    // ── INFERENCE path: full grading + lesion + heatmap ──────────────────────
     try {
         self.postMessage({ type: 'STATUS', message: 'Initializing AI Models...' });
 

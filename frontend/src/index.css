@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,102 +6,157 @@
 
 @layer base {
   html {
-    font-family: 'Inter', system-ui, sans-serif;
-    background-color: #0f172a;
+    font-family: 'Outfit', 'Inter', system-ui, sans-serif;
+    background-color: #0A0F1E;
     color: #f1f5f9;
     -webkit-font-smoothing: antialiased;
+    scroll-behavior: smooth;
   }
 
   h1,
   h2,
-  h3 {
-    font-weight: 800;
-    letter-spacing: -0.03em;
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-black tracking-tight text-white;
+  }
+
+  /* Hide scrollbar for nav and other containers */
+  .scrollbar-hide::-webkit-scrollbar { display: none; }
+  .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+}
+
+@layer components {
+  /* ── Reusable buttons ── */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 font-bold rounded-xl px-5 py-2.5 text-sm transition-all duration-200 focus:outline-none active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none;
+    min-height: 48px;
+  }
+
+  .btn-primary {
+    @apply btn bg-gradient-to-r from-violet-600 to-blue-600 hover:from-violet-500 hover:to-blue-500 text-white shadow-lg shadow-violet-900/40;
+  }
+
+  .btn-secondary {
+    @apply btn bg-[#1F2937] border border-[#374151] text-slate-300 hover:bg-[#374151] hover:text-white;
+  }
+
+  .btn-ghost {
+    @apply btn text-slate-400 hover:text-white hover:bg-[#1F2937]/50;
+  }
+
+  .btn-danger {
+    @apply btn bg-red-600/10 border border-red-500/20 text-red-500 hover:bg-red-600 hover:text-white;
+  }
+
+  /* ── Cards ── */
+  .card {
+    @apply bg-[#111827] rounded-2xl border border-[#1F2937] p-5 shadow-xl;
+  }
+
+  .card-elevated {
+    @apply bg-[#111827] rounded-3xl border border-[#1F2937] p-6 shadow-2xl transition-all duration-300 hover:border-violet-500/40 hover:shadow-violet-900/20;
+  }
+
+  .stat-card {
+    @apply bg-[#111827] border border-[#1F2937] rounded-2xl p-5 flex flex-col items-center gap-2 text-center transition-all duration-300 hover:scale-[1.02] hover:border-violet-500/30;
+  }
+
+  /* ── Form Inputs ── */
+  .input, .form-input {
+    @apply w-full bg-[#0A0F1E] border border-[#1F2937] text-white rounded-xl px-4 py-3 text-sm placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 transition-all;
+  }
+
+  .select {
+    @apply input appearance-none bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23475569%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%3E%3C%2Fpolyline%3E%3C%2Fsvg%3E')] bg-[length:1.25rem] bg-[right_1rem_center] bg-no-repeat;
+  }
+
+  /* ── Typography Helpers ── */
+  .section-label {
+    @apply text-slate-500 uppercase tracking-widest text-[10px] font-bold mb-1 ml-1;
+  }
+
+  /* ── Grade Badges ── */
+  .grade-pill {
+    @apply inline-flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider px-3 py-1.5 rounded-full border transition-colors;
+  }
+
+  .grade-0 { @apply bg-emerald-500/10 text-emerald-400 border-emerald-500/20; }
+  .grade-1 { @apply bg-yellow-500/10 text-yellow-400 border-yellow-500/20; }
+  .grade-2 { @apply bg-orange-500/10 text-orange-400 border-orange-500/20; }
+  .grade-3 { @apply bg-red-500/10 text-red-400 border-red-500/20; }
+  .grade-4 { @apply bg-pink-500/10 text-pink-400 border-pink-500/20; }
+
+  /* ── Tables ── */
+  .data-table-container {
+    @apply bg-[#111827] border border-[#1F2937] rounded-3xl overflow-hidden shadow-2xl;
+  }
+
+  .data-table {
+    @apply w-full text-sm border-collapse;
+  }
+
+  .data-table thead {
+    @apply bg-[#0A0F1E] border-b border-[#1F2937];
+  }
+
+  .data-table th {
+    @apply px-6 py-4 text-left text-[10px] font-black uppercase tracking-[0.2em] text-slate-500;
+  }
+
+  .data-table td {
+    @apply px-6 py-4 text-slate-300 border-b border-[#1F2937]/50;
+  }
+
+  .data-table tbody tr {
+    @apply hover:bg-[#1F2937]/40 transition-colors cursor-default;
+  }
+
+  .data-table tbody tr:last-child td {
+    @apply border-b-0;
   }
 }
 
-/* ── Reusable components using only stock Tailwind ─ */
-.btn {
-  @apply inline-flex items-center justify-center gap-2 font-bold rounded-xl px-5 py-2.5 text-sm transition-all duration-150 focus:outline-none active:scale-[0.97];
-  min-height: 44px;
+/* ── Custom Animations ── */
+@keyframes bounce-once {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
 }
 
-.btn-primary {
-  @apply btn bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-900/40;
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(0.98); }
 }
 
-.btn-secondary {
-  @apply btn bg-slate-700 text-slate-200 hover:bg-slate-600;
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-.btn-ghost {
-  @apply btn text-blue-400 hover:bg-blue-950;
+@keyframes scale-up {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
 }
 
-.btn-danger {
-  @apply btn bg-rose-600 text-white hover:bg-rose-500;
+@keyframes scan {
+  0% { transform: translateY(-380px); opacity: 0; }
+  15%, 85% { opacity: 1; }
+  100% { transform: translateY(380px); opacity: 0; }
 }
 
-.card {
-  @apply bg-slate-800 rounded-2xl border border-slate-700 p-5;
+.animate-bounce-once {
+  animation: bounce-once 0.5s ease-in-out;
 }
 
-.card-elevated {
-  @apply bg-slate-800 rounded-2xl border border-slate-700 p-6 shadow-xl shadow-black/30;
+.animate-pulse-soft {
+  animation: pulse-soft 3s ease-in-out infinite;
 }
 
-.stat-card {
-  @apply card flex flex-col items-center justify-center gap-1 text-center hover:border-slate-500 transition-colors;
+.animate-fade-in {
+  animation: fade-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-.input {
-  @apply w-full border border-slate-600 rounded-xl px-3.5 py-2.5 text-sm bg-slate-700 text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent;
-}
-
-.section-label {
-  @apply text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400 mb-1;
-}
-
-.grade-pill {
-  @apply inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full;
-}
-
-.grade-0 {
-  @apply bg-emerald-900/60 text-emerald-300 ring-1 ring-emerald-700;
-}
-
-.grade-1 {
-  @apply bg-yellow-900/60 text-yellow-300 ring-1 ring-yellow-700;
-}
-
-.grade-2 {
-  @apply bg-orange-900/60 text-orange-300 ring-1 ring-orange-700;
-}
-
-.grade-3 {
-  @apply bg-red-900/60 text-red-300 ring-1 ring-red-700;
-}
-
-.grade-4 {
-  @apply bg-pink-900/60 text-pink-300 ring-1 ring-pink-700;
-}
-
-.data-table {
-  @apply w-full text-sm border-collapse;
-}
-
-.data-table thead tr {
-  @apply border-b border-slate-600;
-}
-
-.data-table th {
-  @apply px-4 py-3 text-left text-[10px] font-bold uppercase tracking-widest text-slate-400;
-}
-
-.data-table td {
-  @apply px-4 py-3.5 text-slate-200 border-b border-slate-700/60;
-}
-
-.data-table tbody tr:hover {
-  @apply bg-slate-700/40;
+.animate-scale-up {
+  animation: scale-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }

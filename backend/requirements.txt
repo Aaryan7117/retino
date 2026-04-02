@@ -1,14 +1,10 @@
---extra-index-url https://download.pytorch.org/whl/cpu
 fastapi==0.110.0
 uvicorn[standard]==0.29.0
 python-multipart==0.0.9
-torch==2.5.0
-torchvision==0.20.0
-efficientnet_pytorch==0.7.1
 onnx>=1.17.0
 onnxruntime==1.23.2
 Pillow==10.3.0
 numpy==1.26.4
 opencv-python-headless==4.9.0.80
-onnxscript==0.6.2
 gTTS==2.5.1
+reportlab==4.2.0
