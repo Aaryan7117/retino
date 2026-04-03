@@ -42,7 +42,7 @@ export default function OfflineIndicator() {
                 : 'bg-sky-900/40 border-sky-700/60 text-sky-300'
         }`}>
             <span className={`w-2 h-2 rounded-full ${!isOnline ? 'bg-amber-400 animate-pulse' : 'bg-sky-400'}`} />
-            {!isOnline ? 'Offline' : 'Syncing'}
+            <span className="sm:inline hidden">{!isOnline ? 'Offline' : 'Syncing'}</span>
             {pending > 0 && <span className="ml-1 bg-white/20 px-1.5 py-0.5 rounded-full">{pending} pending</span>}
         </div>
     );

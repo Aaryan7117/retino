@@ -191,7 +191,7 @@ self.onmessage = async (e) => {
     if (type === 'YOLO_ONLY') {
         try {
             self.postMessage({ type: 'STATUS', message: 'Loading Lesion Model...' });
-            const options = { executionProviders: ['wasm'] };
+            const options = { executionProviders: ['webgl', 'wasm'], graphOptimizationLevel: 'all' };
             const lesionSession = await ort.InferenceSession.create('/models/yolo_lesions.onnx', options);
             self.postMessage({ type: 'STATUS', message: 'Running Lesion Detection...' });
 
@@ -224,7 +224,7 @@ self.onmessage = async (e) => {
                     const s = output[numAnchors * (4 + c) + i];
                     if (s > bestScore) { bestScore = s; bestClass = c; }
                 }
-                if (bestScore > 0.25) {
+                if (bestScore > 0.15) { // Lowered from 0.25 to reduce miss rate
                     const cx = output[i];
                     const cy = output[numAnchors + i];
                     const w  = output[numAnchors * 2 + i];
@@ -240,6 +240,7 @@ self.onmessage = async (e) => {
                 }
             }
 
+            console.log('[YOLO] Raw detections before NMS:', boxes.length);
             const indices = nms(boxes, scores);
             const detections = indices.map(idx => ({
                 class_name: YOLO_CLASSES[classIds[idx]],
@@ -247,6 +248,7 @@ self.onmessage = async (e) => {
                 confidence: scores[idx],
                 bbox:       boxes[idx]
             }));
+            console.log('[YOLO] After NMS:', detections.length);
 
             self.postMessage({
                 type: 'YOLO_RESULT',
@@ -267,7 +269,7 @@ self.onmessage = async (e) => {
         self.postMessage({ type: 'STATUS', message: 'Initializing AI Models...' });
 
         // Phase 1: Model Loading (Sequential for Memory Stability)
-        const options = { executionProviders: ['wasm'] };
+        const options = { executionProviders: ['webgl', 'wasm'], graphOptimizationLevel: 'all' };
         const gradingSession = await ort.InferenceSession.create('/models/retina_model.onnx', options);
         self.postMessage({ type: 'STATUS', message: 'Grading Model ✅' });
 
@@ -335,7 +337,7 @@ self.onmessage = async (e) => {
                 const s = output[numAnchors * (4 + c) + i];
                 if (s > bestScore) { bestScore = s; bestClass = c; }
             }
-            if (bestScore > 0.25) {
+            if (bestScore > 0.15) { // Lowered from 0.25 to reduce miss rate
                 const cx = output[i];
                 const cy = output[numAnchors + i];
                 const w = output[numAnchors * 2 + i];
@@ -352,6 +354,7 @@ self.onmessage = async (e) => {
             }
         }
 
+        console.log('[YOLO] Raw detections before NMS:', boxes.length);
         const indices = nms(boxes, scores);
         const detections = indices.map(idx => ({
             class_name: YOLO_CLASSES[classIds[idx]],
@@ -359,6 +362,7 @@ self.onmessage = async (e) => {
             confidence: scores[idx],
             bbox: boxes[idx]
         }));
+        console.log('[YOLO] After NMS:', detections.length);
 
         // Phase 4: Assembly — Feature B: use Score-CAM (with Sobel fallback)
         let heatmapBlob;

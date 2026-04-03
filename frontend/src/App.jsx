@@ -80,10 +80,18 @@ function InstallButton() {
     }
   };
 
+  // Hide button if already installed as PWA or if running in standalone mode
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+  if (isStandalone || isAlreadyInstalled) return null;
+
+  // On mobile, if no install prompt is available (e.g. iOS Safari), hide the button
+  // to avoid header clutter since it will just show an alert anyway.
+  if (!installPrompt && window.innerWidth < 640) return null;
+
   return (
     <button
       onClick={handleInstallClick}
-      className={`hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold transition-all ${
+      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border text-[10px] font-black uppercase tracking-tight transition-all shrink-0 ${
         isAlreadyInstalled 
           ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
           : 'bg-[#1F2937] border-[#374151] text-slate-300 hover:bg-[#374151] hover:text-white'
@@ -109,7 +117,7 @@ const BASE_NAVIGATION = [
  * AppContent Component: Handles the Auth Gate and Main Layout.
  * Must be wrapped in BrowserRouter.
  */
-function AppContent({ userSession, userProfile, setUserProfile, profileLoading, waitingServiceWorker, showUpdateToast, setShowUpdateToast }) {
+function AppContent({ userSession, userProfile, setUserProfile, profileLoading, sessionChecked, waitingServiceWorker, showUpdateToast, setShowUpdateToast }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
   const isResetPage = location.pathname === '/reset-password';
@@ -141,8 +149,8 @@ function AppContent({ userSession, userProfile, setUserProfile, profileLoading, 
     return <Navigate to="/" replace />;
   }
 
-  // No profile at all — show role selection
-  if (userSession && !userProfile && !profileLoading) {
+  // No profile at all — show role selection (only after session has been confirmed)
+  if (userSession && !userProfile && !profileLoading && sessionChecked) {
     return <RoleSelect userId={userSession.id} onComplete={(profile) => setUserProfile(profile)} />;
   }
 
@@ -160,14 +168,14 @@ function AppContent({ userSession, userProfile, setUserProfile, profileLoading, 
       <header className="bg-[#0A0F1E] border-b border-[#1F2937] sticky top-0 z-50">
         <div className="max-w-[1440px] mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-600 to-blue-600 flex items-center justify-center shadow-lg shadow-violet-500/20">
-              <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-600 to-blue-600 flex items-center justify-center shadow-lg shadow-violet-500/20 shrink-0">
+              <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
               </svg>
             </div>
             <div className="flex flex-col">
-              <h1 className="text-white font-black text-lg leading-none tracking-tight">
+              <h1 className="text-white font-black text-base sm:text-lg leading-none tracking-tighter">
                 RetinaScan <span className="text-violet-500">AI</span>
               </h1>
               <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1 hidden sm:block">
@@ -176,11 +184,11 @@ function AppContent({ userSession, userProfile, setUserProfile, profileLoading, 
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-3">
             <InstallButton />
             <BackendIndicator />
             <OfflineIndicator />
-            <div className="h-6 w-px bg-[#1F2937] mx-1 hidden sm:block"></div>
+            <div className="h-6 w-px bg-[#1F2937] mx-0.5 sm:mx-1 hidden sm:block"></div>
             
             <div className="relative">
               <button
@@ -219,7 +227,7 @@ function AppContent({ userSession, userProfile, setUserProfile, profileLoading, 
           </div>
         </div>
 
-        <div className="border-t border-[#1F2937]/50 bg-[#0A0F1E]/50 backdrop-blur-md hidden md:block">
+        <div className="border-t border-[#1F2937]/50 bg-[#0A0F1E]/50 backdrop-blur-md hidden lg:block">
           <nav className="max-w-[1440px] mx-auto flex items-center gap-1 px-4 py-2">
             {navItems.map(({ to, label }) => (
               <NavLink
@@ -309,7 +317,7 @@ function AppContent({ userSession, userProfile, setUserProfile, profileLoading, 
             ];
 
         return (
-          <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-[#0A0F1E]/95 backdrop-blur-lg border-t border-[#1F2937] safe-area-bottom">
+          <nav className="fixed bottom-0 left-0 right-0 z-50 lg:hidden bg-[#0A0F1E]/95 backdrop-blur-lg border-t border-[#1F2937] safe-area-bottom">
             <div className="flex items-center justify-around py-2 px-1">
               {mobileNavItems.map(({ to, label, icon }) => (
                 <NavLink
@@ -345,6 +353,7 @@ export default function App() {
   
   const [userProfile, setUserProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(true);
+  const [sessionChecked, setSessionChecked] = useState(false);
 
   async function loadUserProfile(userId) {
     if (!userId) { setProfileLoading(false); return; }
@@ -379,7 +388,18 @@ export default function App() {
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
+      // Fix 2: persist uid to localStorage for offline IndexedDB scoping
+      if (data?.user) {
+        localStorage.setItem('rs_uid', data.user.id);
+      }
+      // Fix 3: read cached profile synchronously before async loads
+      const cachedUid = data?.user?.id;
+      if (cachedUid) {
+        const cached = localStorage.getItem(`rs_profile_${cachedUid}`);
+        if (cached) setUserProfile(JSON.parse(cached));
+      }
       setUserSession(data?.user ?? null);
+      setSessionChecked(true); // Fix 3: mark session as verified
       if (data?.user) {
          syncPatientsFromCloud();
          loadUserProfile(data.user.id);
@@ -391,9 +411,13 @@ export default function App() {
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       setUserSession(session?.user ?? null);
       if (session?.user) {
+         // Fix 2: persist uid to localStorage on auth state change
+         localStorage.setItem('rs_uid', session.user.id);
          syncPatientsFromCloud();
          loadUserProfile(session.user.id);
       } else {
+         // Fix 2: remove uid from localStorage on logout
+         localStorage.removeItem('rs_uid');
          setUserProfile(null);
          setProfileLoading(false);
       }
@@ -432,6 +456,7 @@ export default function App() {
         userProfile={userProfile}
         setUserProfile={setUserProfile}
         profileLoading={profileLoading}
+        sessionChecked={sessionChecked}
         waitingServiceWorker={waitingServiceWorker}
         showUpdateToast={showUpdateToast}
         setShowUpdateToast={setShowUpdateToast}

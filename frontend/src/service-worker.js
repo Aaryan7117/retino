@@ -30,6 +30,18 @@ clientsClaim();
 cleanupOutdatedCaches();
 precacheAndRoute(self.__WB_MANIFEST);
 
+// --- Pre-cache models & WASM during installation (Fix 4) ---
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(`retinascan-models-${APP_VERSION}`).then(cache => cache.addAll([
+      '/models/retina_model.onnx',
+      '/models/yolo_lesions.onnx',
+      '/wasm/ort-wasm-simd-threaded.wasm',
+      '/wasm/ort-wasm-simd-threaded.asyncify.wasm',
+    ]))
+  );
+});
+
 // --- On activate: clear caches from previous version ---
 self.addEventListener("activate", (event) => {
   event.waitUntil(
@@ -110,6 +122,18 @@ registerRoute(
     cacheName: `retinascan-sample-data-${APP_VERSION}`,
     plugins: [new CacheableResponsePlugin({ statuses: [0, 200] })],
   }),
+);
+
+// --- Supabase REST API: Cache profile & settings (Fix 2) ---
+registerRoute(
+  ({ url }) => url.hostname.includes('supabase.co') && url.pathname.includes('/rest/'),
+  new StaleWhileRevalidate({
+    cacheName: `retinascan-supabase-${APP_VERSION}`,
+    plugins: [
+      new CacheableResponsePlugin({ statuses: [200] }),
+      new ExpirationPlugin({ maxEntries: 100, maxAgeSeconds: 24 * 60 * 60 }),
+    ],
+  })
 );
 
 // --- FastAPI backend: inference and report endpoints (network-first) ---

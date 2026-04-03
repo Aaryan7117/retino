@@ -7,9 +7,16 @@ function EyeCanvas({ imageUrl, yolo, label, accentClass }) {
 
     if (!imageUrl) return null;
 
-    const detections = yolo?.detections || [];
+    const rawDetections = yolo?.detections || [];
     const imgW = yolo?.image_shape?.[1] || 1024;
     const imgH = yolo?.image_shape?.[0] || 1024;
+
+    // Filter out sub-pixel noise boxes (width or height < 1% of image dimension)
+    const detections = rawDetections.filter(d => {
+        const w = (d.bbox[2] - d.bbox[0]) / imgW;
+        const h = (d.bbox[3] - d.bbox[1]) / imgH;
+        return w > 0.01 && h > 0.01;
+    });
 
     const COLORS = {
         0: 'border-red-500 bg-red-500/10',

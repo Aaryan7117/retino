@@ -76,7 +76,7 @@ export default function BackendIndicator() {
         return (
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-slate-700 bg-slate-800 text-xs font-bold text-slate-400">
                 <span className="w-2 h-2 rounded-full bg-slate-500 animate-pulse" />
-                <span>API</span>
+                <span className="sm:inline hidden">API</span>
             </div>
         );
     }
@@ -85,7 +85,7 @@ export default function BackendIndicator() {
         return (
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 text-xs font-bold text-emerald-400 transition-colors">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 relative badge-ping" />
-                <span>API</span>
+                <span className="sm:inline hidden">API</span>
             </div>
         );
     }
@@ -93,7 +93,7 @@ export default function BackendIndicator() {
     return (
         <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-rose-500/20 bg-rose-500/10 text-xs font-bold text-rose-400 transition-colors" title="Backend Server Disconnected">
             <span className="w-2 h-2 rounded-full bg-rose-500" />
-            <span>API</span>
+            <span className="sm:inline hidden">API</span>
         </div>
     );
 }

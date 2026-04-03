@@ -108,7 +108,7 @@ export default function Scanner() {
         setErrorMsg('');
 
         try {
-            setProgressMsg('Initializing Neural Processing Engine...');
+            setProgressMsg('Loading AI Model (first offline run may take 30-60 sec)...');
 
             const [rightInferenceResult, leftInferenceResult] = await Promise.all([
                 analyzeImage(rightEye.file, (msg) => setProgressMsg(`Right Eye: ${msg}`)),

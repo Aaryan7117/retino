@@ -23,8 +23,7 @@ const AUDIT_LOG_STORE = "audit_log";
  * @returns {Promise<string>}
  */
 async function getDBName() {
-  const { data } = await supabase.auth.getUser();
-  const uid = data?.user?.id || "anonymous";
+  const uid = localStorage.getItem('rs_uid') || 'anonymous';
   return `RetinaScanDB_${uid}`;
 }
 
@@ -270,8 +269,7 @@ export async function syncPatientsFromCloud() {
  */
 export async function getAllPatients() {
   const db = await getDB();
-  const { data } = await supabase.auth.getUser();
-  const uid = data?.user?.id;
+  const uid = localStorage.getItem('rs_uid');
   const patients = await db.getAll(PATIENTS_STORE);
   // Double-filter by user_id for extra safety (DB is already user-scoped)
   const filtered = uid ? patients.filter(p => !p.user_id || p.user_id === uid) : patients;
