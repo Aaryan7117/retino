@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../utils/supabaseClient';
 
 /**
@@ -6,6 +7,7 @@ import { supabase } from '../utils/supabaseClient';
  * Allows choosing between Medical Professional (Doctor) and Patient/Individual.
  */
 export default function RoleSelect({ userId, onComplete }) {
+  const navigate = useNavigate();
   const [isUpdating, setIsUpdating] = useState(false);
   const [error, setError] = useState(null);
 
@@ -26,8 +28,8 @@ export default function RoleSelect({ userId, onComplete }) {
 
       if (error) throw error;
       if (onComplete) onComplete(data);
-      // Force navigate to onboarding (Navigate component has no Router context here)
-      window.location.href = role === 'doctor' ? '/onboarding/doctor' : '/onboarding/patient';
+      // Navigate to onboarding
+      navigate(role === 'doctor' ? '/onboarding/doctor' : '/onboarding/patient');
     } catch (e) {
       console.error('Role selection failed:', e);
       setError('Failed to update profile. Please try again.');
@@ -62,7 +64,7 @@ export default function RoleSelect({ userId, onComplete }) {
           <button
             onClick={() => selectRole('doctor')}
             disabled={isUpdating}
-            className='group relative flex flex-col p-8 rounded-[32px] bg-[#111827] border border-[#1F2937] hover:border-violet-500/50 transition-all text-left hover:scale-[1.02] shadow-2xl overflow-hidden'
+            className='group relative flex flex-col p-5 sm:p-8 rounded-2xl sm:rounded-[32px] bg-[#111827] border border-[#1F2937] hover:border-violet-500/50 transition-all text-left hover:scale-[1.02] shadow-2xl overflow-hidden'
           >
             <div className='absolute top-0 right-0 w-32 h-32 bg-violet-600/5 blur-3xl rounded-full -mr-16 -mt-16 group-hover:bg-violet-600/10 transition-colors' />
             <div className='w-14 h-14 rounded-2xl bg-violet-600/20 border border-violet-500/30 flex items-center justify-center text-3xl mb-6 group-hover:scale-110 transition-transform'>
@@ -72,7 +74,7 @@ export default function RoleSelect({ userId, onComplete }) {
             <p className='text-slate-500 text-sm font-medium leading-relaxed'>
               For ophthalmologists, optometrists, and clinic administrators conducting screenings.
             </p>
-            <div className='mt-8 flex items-center gap-2 text-violet-400 text-xs font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity'>
+            <div className='mt-8 flex items-center gap-2 text-violet-400 text-xs font-black uppercase tracking-widest opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity'>
               Select Doctor <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
             </div>
           </button>
@@ -81,7 +83,7 @@ export default function RoleSelect({ userId, onComplete }) {
           <button
             onClick={() => selectRole('patient')}
             disabled={isUpdating}
-            className='group relative flex flex-col p-8 rounded-[32px] bg-[#111827] border border-[#1F2937] hover:border-blue-500/50 transition-all text-left hover:scale-[1.02] shadow-2xl overflow-hidden'
+            className='group relative flex flex-col p-5 sm:p-8 rounded-2xl sm:rounded-[32px] bg-[#111827] border border-[#1F2937] hover:border-blue-500/50 transition-all text-left hover:scale-[1.02] shadow-2xl overflow-hidden'
           >
             <div className='absolute top-0 right-0 w-32 h-32 bg-blue-600/5 blur-3xl rounded-full -mr-16 -mt-16 group-hover:bg-blue-600/10 transition-colors' />
             <div className='w-14 h-14 rounded-2xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-3xl mb-6 group-hover:scale-110 transition-transform'>
@@ -91,7 +93,7 @@ export default function RoleSelect({ userId, onComplete }) {
             <p className='text-slate-500 text-sm font-medium leading-relaxed'>
               For individuals tracking their own screening results and finding nearby experts.
             </p>
-            <div className='mt-8 flex items-center gap-2 text-blue-400 text-xs font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity'>
+            <div className='mt-8 flex items-center gap-2 text-blue-400 text-xs font-black uppercase tracking-widest opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity'>
               Select Patient <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
             </div>
           </button>

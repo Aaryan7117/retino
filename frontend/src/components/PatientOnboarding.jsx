@@ -59,12 +59,12 @@ export default function PatientOnboarding({ userId, onComplete }) {
     }
   };
 
-  const inputClass = 'w-full bg-[#0A0F1E] border border-[#1F2937] rounded-xl px-4 py-3 text-white focus:border-blue-500 outline-none transition-all text-sm placeholder:text-slate-600';
+  const inputClass = 'w-full bg-[#0A0F1E] border border-[#1F2937] rounded-xl px-4 py-3 text-white focus:border-blue-500 outline-none transition-all text-base placeholder:text-slate-600';
   const selectClass = inputClass + ' appearance-none';
   const labelClass = 'text-[10px] font-black text-slate-500 uppercase tracking-widest';
 
   return (
-    <div className='bg-[#0A0F1E] flex flex-col items-center justify-center py-8 px-6 font-["Outfit"]'>
+    <div className='min-h-screen bg-[#0A0F1E] flex flex-col items-center justify-center py-8 px-4 sm:px-6 font-["Outfit"] pb-safe'>
       <div className='max-w-2xl w-full space-y-10 animate-fade-in'>
         <div className='text-center space-y-3'>
           <h1 className='text-4xl font-black text-white tracking-tighter'>Personal <span className='text-blue-500'>Health Profile</span></h1>
@@ -77,14 +77,14 @@ export default function PatientOnboarding({ userId, onComplete }) {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className='card-elevated bg-[#111827] p-8 md:p-10 space-y-6'>
+        <form onSubmit={handleSubmit} className='card-elevated bg-[#111827] p-5 sm:p-8 md:p-10 space-y-6'>
           <div className='space-y-2'>
             <label className={labelClass}>Full Name</label>
             <input required type='text' placeholder='Your Full Name' className={inputClass}
               value={formData.full_name} onChange={e => setFormData({ ...formData, full_name: e.target.value })} />
           </div>
 
-          <div className='grid grid-cols-1 md:grid-cols-2 gap-6'>
+          <div className='grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6'>
             <div className='space-y-2'>
               <label className={labelClass}>Age</label>
               <input required type='number' placeholder='Age' className={inputClass}
@@ -113,7 +113,7 @@ export default function PatientOnboarding({ userId, onComplete }) {
             </select>
           </div>
 
-          <div className='grid grid-cols-1 md:grid-cols-2 gap-6'>
+          <div className='grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6'>
             <div className='space-y-2'>
               <label className={labelClass}>City / Location</label>
               <input required type='text' placeholder='Chennai, India' className={inputClass}
@@ -126,7 +126,7 @@ export default function PatientOnboarding({ userId, onComplete }) {
             </div>
           </div>
 
-          <div className='grid grid-cols-1 md:grid-cols-2 gap-6'>
+          <div className='grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6'>
             <div className='space-y-2'>
               <label className={labelClass}>State</label>
               <input type='text' placeholder='Tamil Nadu' className={inputClass}

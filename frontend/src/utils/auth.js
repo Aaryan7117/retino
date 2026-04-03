@@ -16,13 +16,14 @@ export async function signUp(email, password) {
 
   if (error) throw error
 
-  // insert into profiles table
-  await supabase.from('profiles').insert([
+  // upsert into profiles table to prevent errors on re-signup
+  await supabase.from('profiles').upsert(
     {
       id: data.user.id,
       email: data.user.email
-    }
-  ])
+    },
+    { onConflict: 'id', ignoreDuplicates: true }
+  )
 
   return data
 }

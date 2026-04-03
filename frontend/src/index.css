@@ -160,3 +160,10 @@
 .animate-scale-up {
   animation: scale-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+
+/* ── Safe Area UI Helpers ── */
+@supports (padding-top: env(safe-area-inset-top)) {
+  .pt-safe { padding-top: env(safe-area-inset-top); }
+  .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+  .safe-area-bottom { padding-bottom: env(safe-area-inset-bottom); }
+}

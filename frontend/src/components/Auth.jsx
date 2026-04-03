@@ -125,7 +125,7 @@ export default function Auth() {
         <div className="md:hidden absolute top-0 left-0 w-full h-64 bg-gradient-to-b from-violet-600/10 to-transparent pointer-events-none"></div>
 
         {/* Main Form Centerer */}
-        <div className="flex-1 flex flex-col justify-center items-center p-8 py-20">
+        <div className="flex-1 flex flex-col justify-center items-center p-8 py-10 md:py-20">
           <div className="w-full max-w-md z-10 space-y-10">
             
             {/* Mobile logo */}
@@ -149,7 +149,7 @@ export default function Auth() {
             </div>
 
             {/* Form Card */}
-            <div className="bg-[#111827] border border-[#1F2937] rounded-[32px] p-8 md:p-10 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.5)]">
+            <div className="bg-[#111827] border border-[#1F2937] rounded-2xl sm:rounded-[32px] p-8 md:p-10 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.5)]">
               
               {mode === 'reset' ? (
                 <div className="space-y-6">
@@ -170,7 +170,7 @@ export default function Auth() {
                     </div>
                   )}
 
-                  <button onClick={handleResetPassword} disabled={isAuthenticating || !email} className="w-full btn-primary py-5 rounded-2xl font-black text-base uppercase tracking-widest">
+                  <button onClick={handleResetPassword} disabled={isAuthenticating || !email} className="w-full btn-primary py-4 sm:py-5 rounded-2xl font-black text-base uppercase tracking-widest">
                     {isAuthenticating ? 'Sending...' : 'Authorize Reset →'}
                   </button>
 
@@ -234,7 +234,7 @@ export default function Auth() {
                   <button
                     onClick={handleAuthSubmit}
                     disabled={isAuthenticating}
-                    className="w-full btn-primary py-5 rounded-2xl font-black text-base uppercase tracking-widest transition-transform active:scale-95"
+                    className="w-full btn-primary py-4 sm:py-5 rounded-2xl font-black text-base uppercase tracking-widest transition-transform active:scale-95"
                   >
                     {isAuthenticating ? (
                       <span className="flex items-center gap-3">

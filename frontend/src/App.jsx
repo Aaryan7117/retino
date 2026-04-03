@@ -173,7 +173,7 @@ function AppContent({ userSession, userProfile, setUserProfile, profileLoading, 
   return (
     <div className="min-h-screen bg-[#0A0F1E] flex flex-col text-slate-100">
       {/* HEADER */}
-      <header className="bg-[#0A0F1E] border-b border-[#1F2937] sticky top-0 z-50">
+      <header className="bg-[#0A0F1E] border-b border-[#1F2937] sticky top-0 z-50 pt-safe">
         <div className="max-w-[1440px] mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-600 to-blue-600 flex items-center justify-center shadow-lg shadow-violet-500/20 shrink-0">
@@ -258,7 +258,7 @@ function AppContent({ userSession, userProfile, setUserProfile, profileLoading, 
       </header>
 
       {/* MAIN */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6 pb-24 md:pb-8">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6 pb-24 md:pb-8 pb-safe">
         <Suspense fallback={<div className="flex items-center justify-center p-20"><div className="w-10 h-10 border-4 border-violet-600 border-t-transparent rounded-full animate-spin"></div></div>}>
           <Routes>
             <Route path="/" element={<Dashboard />} />
@@ -368,12 +368,9 @@ export default function App() {
     setProfileLoading(true); 
 
     // Attempt local cache first for instant load.
-    // IMPORTANT: Only use cache if profile is complete — an incomplete cached profile
-    // (from a previous abandoned mobile onboarding session) would trigger the onboarding redirect.
     const cached = localStorage.getItem(`rs_profile_${userId}`);
     if (cached) {
-      const parsedCache = JSON.parse(cached);
-      if (parsedCache.profile_complete) setUserProfile(parsedCache);
+      setUserProfile(JSON.parse(cached));
     }
 
     const safetyTimeout = setTimeout(() => {
@@ -424,11 +421,13 @@ export default function App() {
         if (cached) setUserProfile(JSON.parse(cached));
       }
       setUserSession(data?.user ?? null);
-      setSessionChecked(true); // Fix 3: mark session as verified
       if (data?.user) {
          syncPatientsFromCloud();
-         loadUserProfile(data.user.id);
+         loadUserProfile(data.user.id).then(() => {
+           setSessionChecked(true);
+         });
       } else {
+         setSessionChecked(true);
          setProfileLoading(false);
       }
     });
