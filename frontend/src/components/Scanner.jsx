@@ -184,7 +184,19 @@ export default function Scanner() {
             navigate('/results', { state: { record: patientRecord } });
         } catch (err) {
             console.error('Analysis failed:', err);
-            setErrorMsg(err.message || 'Biometric analysis failed. Please verify image quality and retry.');
+            let displayError = err.message || 'Biometric analysis failed. Please verify image quality and retry.';
+            
+            // Provide clearer guidance for common offline/worker failures
+            if (
+                displayError.toLowerCase().includes('worker') ||
+                displayError.toLowerCase().includes('undefined') ||
+                displayError.toLowerCase().includes('wasm') ||
+                displayError.toLowerCase().includes('fetch') ||
+                displayError.toLowerCase().includes('404')
+            ) {
+                displayError = 'AI Engine failed to start. If you are online, please wait 10 seconds and retry — the AI models are downloading in the background. If offline, please connect to Wi-Fi first.';
+            }
+            setErrorMsg(displayError);
         } finally {
             setIsAnalyzing(false);
             setProgressMsg('');

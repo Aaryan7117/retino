@@ -171,9 +171,12 @@ export const analyzeImage = async (imageFile, onProgress) => {
                     };
 
                     inferenceWorker.onerror = (err) => {
+                        console.error('Inference Worker DOM Error:', err);
                         URL.revokeObjectURL(objectUrl);
                         inferenceWorker.terminate();
-                        reject(new Error(`Worker error: ${err.message}`));
+                        // Provide more context: often "undefined" means a 404 or script error on the worker itself
+                        const msg = (err && err.message) ? err.message : "Worker initialization failed (check if model assets are cached or script exists)";
+                        reject(new Error(`Worker error: ${msg}`));
                     };
 
                     inferenceWorker.postMessage({

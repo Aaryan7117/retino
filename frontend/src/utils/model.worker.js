@@ -3,12 +3,27 @@
  * SEPARATE THREAD AI INFERENCE ENGINE
  * Runs EfficientNetB3 for Grading + YOLOv8 for Lesion Mapping entirely offline.
  */
-// Import standard module from node_modules
 import * as ort from 'onnxruntime-web';
 
-// Force absolute local path to prevent Vite dev server resolution misses
-ort.env.wasm.wasmPaths = location.origin + '/wasm/';
-ort.env.wasm.numThreads = 1; 
+// ─── WASM Path Configuration ──────────────────────────────────────────────────
+// Map each WASM asset to its exact filename in /public/wasm/.
+// These filenames MUST match what's on disk. onnxruntime-web defaults to
+// "ort-wasm-simd.wasm" etc which do NOT exist — our files are the *-threaded variants.
+const WASM_BASE = location.origin + '/wasm/';
+ort.env.wasm.wasmPaths = {
+    'ort-wasm-simd-threaded.wasm':          WASM_BASE + 'ort-wasm-simd-threaded.wasm',
+    'ort-wasm-simd-threaded.asyncify.wasm': WASM_BASE + 'ort-wasm-simd-threaded.asyncify.wasm',
+    'ort-wasm-simd-threaded.jsep.wasm':     WASM_BASE + 'ort-wasm-simd-threaded.jsep.wasm',
+    // Provide bare path fallback so the library can also resolve by prefix
+    '':                                     WASM_BASE,
+};
+
+// Use 1 thread only — Web Workers have limited SharedArrayBuffer support in many mobile browsers
+ort.env.wasm.numThreads = 1;
+// Disable proxy — we are already in a worker
+ort.env.wasm.proxy = false;
+
+console.log('[Worker] onnxruntime-web initialized. WASM base:', WASM_BASE);
 
 const YOLO_CLASSES = [
     "External Bleeding",
@@ -182,6 +197,7 @@ function generateSobelHeatmap(imageData) {
 // ─── Core Logic ─────────────────────────────────────────────────────────────
 
 self.onmessage = async (e) => {
+    console.log('[Worker] Message received. Type:', e.data?.type);
     const { type, tensorData, imageData, filename } = e.data;
     if (type !== 'INFERENCE' && type !== 'YOLO_ONLY') return;
 
@@ -191,7 +207,8 @@ self.onmessage = async (e) => {
     if (type === 'YOLO_ONLY') {
         try {
             self.postMessage({ type: 'STATUS', message: 'Loading Lesion Model...' });
-            const options = { executionProviders: ['webgl', 'wasm'], graphOptimizationLevel: 'all' };
+            // NOTE: 'webgl' is NOT available in Web Workers — only 'wasm' works reliably here.
+            const options = { executionProviders: ['wasm'], graphOptimizationLevel: 'all' };
             const lesionSession = await ort.InferenceSession.create('/models/yolo_lesions.onnx', options);
             self.postMessage({ type: 'STATUS', message: 'Running Lesion Detection...' });
 
@@ -269,7 +286,8 @@ self.onmessage = async (e) => {
         self.postMessage({ type: 'STATUS', message: 'Initializing AI Models...' });
 
         // Phase 1: Model Loading (Sequential for Memory Stability)
-        const options = { executionProviders: ['webgl', 'wasm'], graphOptimizationLevel: 'all' };
+        // NOTE: 'webgl' is NOT available in Web Workers — only 'wasm' works reliably here.
+        const options = { executionProviders: ['wasm'], graphOptimizationLevel: 'all' };
         const gradingSession = await ort.InferenceSession.create('/models/retina_model.onnx', options);
         self.postMessage({ type: 'STATUS', message: 'Grading Model ✅' });
 
@@ -398,11 +416,13 @@ self.onmessage = async (e) => {
         self.postMessage({ type: 'RESULT', result, heatmapBlob });
 
     } catch (err) {
-        console.error("Worker Error:", err);
-        let errorMsg = err.message;
-        if (errorMsg.toLowerCase().includes('fetch') || errorMsg.toLowerCase().includes('network')) {
-            errorMsg = "Offline models not fully downloaded. Please connect to the internet and run one scan to cache the AI engine.";
+        console.warn('[Worker] Inference Error:', err);
+        // Safely extract message, ensuring we don't crash if err.message is undefined
+        let msg = (err && err.message) ? err.message : String(err);
+        
+        if (msg.toLowerCase().includes('fetch') || msg.toLowerCase().includes('network') || msg.toLowerCase().includes('404')) {
+            msg = "Offline models not fully downloaded. Please connect to the internet and run one scan to cache the AI engine.";
         }
-        self.postMessage({ type: 'ERROR', error: errorMsg });
+        self.postMessage({ type: 'ERROR', error: msg || 'Unknown inference engine error' });
     }
 };
