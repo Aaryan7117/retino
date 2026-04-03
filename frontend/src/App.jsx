@@ -119,6 +119,7 @@ const BASE_NAVIGATION = [
  */
 function AppContent({ userSession, userProfile, setUserProfile, profileLoading, sessionChecked, waitingServiceWorker, showUpdateToast, setShowUpdateToast }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const location = useLocation();
   const isResetPage = location.pathname === '/reset-password';
 
@@ -224,7 +225,7 @@ function AppContent({ userSession, userProfile, setUserProfile, profileLoading, 
                       <svg className='w-4 h-4' fill='none' viewBox='0 0 24 24' stroke='currentColor'><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d='M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z' /></svg>
                       Feedback
                     </a>
-                    <button onClick={() => { setMenuOpen(false); logout(); }} className="w-full flex items-center gap-3 px-4 py-3 text-xs font-bold text-red-400 hover:bg-red-500/10 transition-colors border-t border-[#1F2937]">
+                    <button onClick={() => { setMenuOpen(false); setShowLogoutConfirm(true); }} className="w-full flex items-center gap-3 px-4 py-3 text-xs font-bold text-red-400 hover:bg-red-500/10 transition-colors border-t border-[#1F2937]">
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
                       Sign Out
                     </button>
@@ -349,6 +350,41 @@ function AppContent({ userSession, userProfile, setUserProfile, profileLoading, 
 
       {showUpdateToast && (
         <UpdateToast wb={waitingServiceWorker} onDismiss={() => setShowUpdateToast(false)} />
+      )}
+
+      {/* LOGOUT CONFIRMATION MODAL */}
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 sm:p-6 animate-fade-in">
+          <div 
+            className="absolute inset-0 bg-[#060B14]/80 backdrop-blur-sm" 
+            onClick={() => setShowLogoutConfirm(false)}
+          />
+          <div className="relative w-full max-w-sm bg-[#111827] border border-[#1F2937] rounded-[32px] p-8 shadow-2xl animate-scale-up">
+            <div className="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-3xl mb-6 mx-auto">
+              👋
+            </div>
+            <div className="text-center space-y-2 mb-8">
+              <h3 className="text-2xl font-black text-white tracking-tight">Sign Out?</h3>
+              <p className="text-slate-500 text-sm font-medium leading-relaxed">
+                Are you sure you want to end your session? Your offline data remains safe on this device.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <button 
+                onClick={() => setShowLogoutConfirm(false)}
+                className="btn-secondary py-4 rounded-xl font-black text-xs uppercase tracking-widest"
+              >
+                Go Back
+              </button>
+              <button 
+                onClick={() => { setShowLogoutConfirm(false); logout(); }}
+                className="bg-red-600 hover:bg-red-500 text-white py-4 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg shadow-red-900/40 transition-all active:scale-95"
+              >
+                Sign Out
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
