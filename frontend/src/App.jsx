@@ -144,8 +144,14 @@ function AppContent({ userSession, userProfile, setUserProfile, profileLoading, 
     );
   }
 
-  // If profile is complete but user is still on an onboarding route, redirect to home
-  if (userSession && userProfile?.profile_complete && location.pathname.startsWith('/onboarding')) {
+  // Helper: consider a profile "effectively complete" if key fields are filled,
+  // regardless of the profile_complete flag (which can get stuck at false due to
+  // failed upserts or race conditions on mobile).
+  const isEffectivelyComplete = userProfile?.profile_complete || 
+    (userProfile?.role && userProfile?.full_name && userProfile?.phone);
+
+  // If profile is effectively complete but user is still on an onboarding route, redirect to home
+  if (userSession && isEffectivelyComplete && location.pathname.startsWith('/onboarding')) {
     return <Navigate to="/" replace />;
   }
 
@@ -155,9 +161,9 @@ function AppContent({ userSession, userProfile, setUserProfile, profileLoading, 
   }
 
   // Has profile but onboarding not complete — redirect to the correct onboarding form.
-  // CRITICAL: Do NOT redirect while profileLoading is true — the cached profile might be stale/incomplete.
-  // The fresh Supabase fetch might show profile_complete: true.
-  if (userSession && userProfile && !userProfile.profile_complete && !profileLoading) {
+  // CRITICAL: Do NOT redirect while profileLoading is true.
+  // Also skip redirect if essential fields are already filled (auto-repair instead).
+  if (userSession && userProfile && !isEffectivelyComplete && !profileLoading) {
     const onboardingPath = userProfile.role === 'doctor' ? '/onboarding/doctor' : '/onboarding/patient';
     if (!location.pathname.startsWith('/onboarding')) {
        return <Navigate to={onboardingPath} replace />;
@@ -380,6 +386,17 @@ export default function App() {
         .select('*').eq('id', userId).maybeSingle();
       if (error) throw error;
       if (data) {
+        // Auto-repair: if essential fields are filled but profile_complete is false,
+        // fix the flag in the database so it never triggers onboarding again.
+        if (!data.profile_complete && data.role && data.full_name && data.phone) {
+          console.warn('[Profile] Auto-repairing profile_complete flag');
+          data.profile_complete = true;
+          supabase.from('profiles')
+            .update({ profile_complete: true })
+            .eq('id', userId)
+            .then(() => console.log('[Profile] Repaired successfully'))
+            .catch(e => console.warn('[Profile] Repair failed:', e));
+        }
         localStorage.setItem(`rs_profile_${userId}`, JSON.stringify(data));
         setUserProfile(data);
       } else if (!cached) {
