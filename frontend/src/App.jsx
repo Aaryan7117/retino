@@ -357,7 +357,8 @@ export default function App() {
 
   async function loadUserProfile(userId) {
     if (!userId) { setProfileLoading(false); return; }
-    
+    setProfileLoading(true); 
+
     // Attempt local cache first for instant load
     const cached = localStorage.getItem(`rs_profile_${userId}`);
     if (cached) setUserProfile(JSON.parse(cached));
@@ -409,13 +410,15 @@ export default function App() {
     });
 
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUserSession(session?.user ?? null);
       if (session?.user) {
+         setProfileLoading(true); // Reset loading state when a user signs in
+         setUserSession(session.user);
          // Fix 2: persist uid to localStorage on auth state change
          localStorage.setItem('rs_uid', session.user.id);
          syncPatientsFromCloud();
          loadUserProfile(session.user.id);
       } else {
+         setUserSession(null);
          // Fix 2: remove uid from localStorage on logout
          localStorage.removeItem('rs_uid');
          setUserProfile(null);
