@@ -241,7 +241,7 @@ self.onmessage = async (e) => {
                     const s = output[numAnchors * (4 + c) + i];
                     if (s > bestScore) { bestScore = s; bestClass = c; }
                 }
-                if (bestScore > 0.15) { // Lowered from 0.25 to reduce miss rate
+                if (bestScore > 0.25) {
                     const cx = output[i];
                     const cy = output[numAnchors + i];
                     const w  = output[numAnchors * 2 + i];
@@ -257,7 +257,6 @@ self.onmessage = async (e) => {
                 }
             }
 
-            console.log('[YOLO] Raw detections before NMS:', boxes.length);
             const indices = nms(boxes, scores);
             const detections = indices.map(idx => ({
                 class_name: YOLO_CLASSES[classIds[idx]],
@@ -265,7 +264,6 @@ self.onmessage = async (e) => {
                 confidence: scores[idx],
                 bbox:       boxes[idx]
             }));
-            console.log('[YOLO] After NMS:', detections.length);
 
             self.postMessage({
                 type: 'YOLO_RESULT',
@@ -355,7 +353,7 @@ self.onmessage = async (e) => {
                 const s = output[numAnchors * (4 + c) + i];
                 if (s > bestScore) { bestScore = s; bestClass = c; }
             }
-            if (bestScore > 0.15) { // Lowered from 0.25 to reduce miss rate
+            if (bestScore > 0.25) {
                 const cx = output[i];
                 const cy = output[numAnchors + i];
                 const w = output[numAnchors * 2 + i];
@@ -372,7 +370,6 @@ self.onmessage = async (e) => {
             }
         }
 
-        console.log('[YOLO] Raw detections before NMS:', boxes.length);
         const indices = nms(boxes, scores);
         const detections = indices.map(idx => ({
             class_name: YOLO_CLASSES[classIds[idx]],
@@ -380,7 +377,6 @@ self.onmessage = async (e) => {
             confidence: scores[idx],
             bbox: boxes[idx]
         }));
-        console.log('[YOLO] After NMS:', detections.length);
 
         // Phase 4: Assembly — Feature B: use Score-CAM (with Sobel fallback)
         let heatmapBlob;
