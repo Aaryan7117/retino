@@ -154,8 +154,10 @@ function AppContent({ userSession, userProfile, setUserProfile, profileLoading, 
     return <RoleSelect userId={userSession.id} onComplete={(profile) => setUserProfile(profile)} />;
   }
 
-  // Has profile but onboarding not complete — redirect to the correct onboarding form
-  if (userSession && userProfile && !userProfile.profile_complete) {
+  // Has profile but onboarding not complete — redirect to the correct onboarding form.
+  // CRITICAL: Do NOT redirect while profileLoading is true — the cached profile might be stale/incomplete.
+  // The fresh Supabase fetch might show profile_complete: true.
+  if (userSession && userProfile && !userProfile.profile_complete && !profileLoading) {
     const onboardingPath = userProfile.role === 'doctor' ? '/onboarding/doctor' : '/onboarding/patient';
     if (!location.pathname.startsWith('/onboarding')) {
        return <Navigate to={onboardingPath} replace />;
@@ -359,9 +361,14 @@ export default function App() {
     if (!userId) { setProfileLoading(false); return; }
     setProfileLoading(true); 
 
-    // Attempt local cache first for instant load
+    // Attempt local cache first for instant load.
+    // IMPORTANT: Only use cache if profile is complete — an incomplete cached profile
+    // (from a previous abandoned mobile onboarding session) would trigger the onboarding redirect.
     const cached = localStorage.getItem(`rs_profile_${userId}`);
-    if (cached) setUserProfile(JSON.parse(cached));
+    if (cached) {
+      const parsedCache = JSON.parse(cached);
+      if (parsedCache.profile_complete) setUserProfile(parsedCache);
+    }
 
     const safetyTimeout = setTimeout(() => {
       console.warn('Profile load timed out, falling back to cache');

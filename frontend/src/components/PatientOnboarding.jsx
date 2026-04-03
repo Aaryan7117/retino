@@ -64,7 +64,7 @@ export default function PatientOnboarding({ userId, onComplete }) {
   const labelClass = 'text-[10px] font-black text-slate-500 uppercase tracking-widest';
 
   return (
-    <div className='min-h-screen bg-[#0A0F1E] flex flex-col items-center justify-center p-6 font-["Outfit"]'>
+    <div className='bg-[#0A0F1E] flex flex-col items-center justify-center py-8 px-6 font-["Outfit"]'>
       <div className='max-w-2xl w-full space-y-10 animate-fade-in'>
         <div className='text-center space-y-3'>
           <h1 className='text-4xl font-black text-white tracking-tighter'>Personal <span className='text-blue-500'>Health Profile</span></h1>
