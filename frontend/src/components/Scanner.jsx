@@ -11,6 +11,7 @@ const FORM_FIELDS = [
     { id: 'age', label: 'Age (years)', type: 'number', col: 1 },
     { id: 'diabeticSince', label: 'Diabetic Since (yrs)', type: 'number', col: 1 },
     { id: 'contact', label: 'Mobile Number', type: 'tel', col: 2 },
+    { id: 'abhaId', label: 'ABHA Insurance ID (optional)', type: 'text', col: 2 },
 ];
 
 /**
@@ -70,7 +71,30 @@ function EyeUploadZone({ label, eyeKey, currentImageData, onSet, onClear }) {
             <input ref={fileInputRef} type='file' accept='image/*' className='hidden'
                 onChange={e => {
                     const selectedFile = e.target.files[0]; if (!selectedFile) return;
-                    onSet({ file: selectedFile, preview: URL.createObjectURL(selectedFile) });
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                        const img = new Image();
+                        img.onload = () => {
+                            const canvas = document.createElement('canvas');
+                            const MAX_DIM = 1024;
+                            let { width, height } = img;
+                            if (width > MAX_DIM || height > MAX_DIM) {
+                                const ratio = Math.min(MAX_DIM / width, MAX_DIM / height);
+                                width = Math.round(width * ratio);
+                                height = Math.round(height * ratio);
+                            }
+                            canvas.width = width; canvas.height = height;
+                            const ctx = canvas.getContext('2d');
+                            ctx.drawImage(img, 0, 0, width, height);
+                            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+                            const base64 = dataUrl.split(',')[1];
+                            const binary = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+                            const newFile = new File([binary], selectedFile.name || 'scan.jpg', { type: 'image/jpeg' });
+                            onSet({ file: newFile, preview: dataUrl });
+                        };
+                        img.src = ev.target.result;
+                    };
+                    reader.readAsDataURL(selectedFile);
                 }} />
         </div>
     );
@@ -90,7 +114,7 @@ export default function Scanner() {
 
     const [patientData, setPatientData] = useState(() => {
         const saved = sessionStorage.getItem('retinascan_patient_draft');
-        return saved ? JSON.parse(saved) : { name: '', age: '', gender: 'Male', diabeticSince: '', contact: '' };
+        return saved ? JSON.parse(saved) : { name: '', age: '', gender: 'Male', diabeticSince: '', contact: '', abhaId: '' };
     });
 
     // Save/Restore image previews to/from session storage (PWA persistence)
@@ -106,8 +130,22 @@ export default function Scanner() {
     useEffect(() => {
         const rCache = sessionStorage.getItem('retinascan_right_preview');
         const lCache = sessionStorage.getItem('retinascan_left_preview');
-        if (rCache) setRightEye({ file: null, preview: rCache, restoredFromCache: true });
-        if (lCache) setLeftEye({ file: null, preview: lCache, restoredFromCache: true });
+        
+        const base64ToFile = (dataUrl, filename) => {
+             const base64 = dataUrl.split(',')[1];
+             if (!base64) return null;
+             try {
+                const binary = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+                return new File([binary], filename, { type: 'image/jpeg' });
+             } catch(e){ return null; }
+        };
+
+        if (rCache?.startsWith('data:')) {
+            setRightEye({ file: base64ToFile(rCache, 'rightEye.jpg'), preview: rCache, restoredFromCache: true });
+        }
+        if (lCache?.startsWith('data:')) {
+            setLeftEye({ file: base64ToFile(lCache, 'leftEye.jpg'), preview: lCache, restoredFromCache: true });
+        }
     }, []);
 
     // Save draft to session storage
@@ -118,16 +156,7 @@ export default function Scanner() {
     const handleScan = async () => {
         if (!rightEye || isAnalyzing) return;
 
-        // Guard: if image was restored from cache (base64 string in sessionStorage),
-        // we lack the original File object needed for inference. Ask for re-upload.
-        if (rightEye.restoredFromCache && !rightEye.file) {
-            setErrorMsg('Session restored from cache. Please re-upload or re-capture images to proceed with AI analysis.');
-            return;
-        }
-        if (leftEye?.restoredFromCache && !leftEye.file) {
-            setErrorMsg('Session restored from cache. Please re-upload or re-capture images to proceed with AI analysis.');
-            return;
-        }
+
 
         if (!patientData.name.trim() || !patientData.age || !patientData.contact.trim()) {
             setErrorMsg('Mandatory clinical data missing: Name, Age, and Contact required.');
@@ -188,6 +217,7 @@ export default function Scanner() {
 
             const patientRecord = {
                 ...patientData,
+                abhaId: patientData.abhaId || '',
                 id: patientId,
                 patientId,
                 timestamp: now.toISOString(),

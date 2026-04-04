@@ -3,6 +3,7 @@
 import { jsPDF } from 'jspdf';
 import QRCode from 'qrcode';
 import { loadLanguageFont } from './pdfFonts';
+import { lookupHospitalByABHA, getNearbyHospitals } from './hospitalLookup';
 
 const PDF_TRANSLATIONS = {
 'en-IN': {
@@ -304,7 +305,7 @@ function drawReportFooter(pdf, pageNumber, totalPages, fontFamily = 'helvetica')
  * @param {Object} data - Contains patient details, AI results, and image previews.
  * @returns {Promise<Object>} The generated report metadata.
  */
-export async function generatePDF({ patient = {}, result = {}, imagePreview = null, record = null, language = 'en-IN' }) {
+export async function generatePDF({ patient = {}, result = {}, imagePreview = null, record = null, language = 'en-IN', abhaId = '', patientState = '' }) {
     const T = PDF_TRANSLATIONS[language] || PDF_TRANSLATIONS['en-IN'];
     let currentY = 15;
 
@@ -601,6 +602,161 @@ export async function generatePDF({ patient = {}, result = {}, imagePreview = nu
             pdf.text(period, MARGIN + 160, currentY + 5.5);
             currentY += 8;
         });
+
+        // --- ABHA INSURANCE HOSPITAL LOOKUP ---
+        if (result.grade >= 3) {
+            const HOSP_TRANSLATIONS = {
+                'en-IN': {
+                    guidance: 'SURGICAL REFERRAL & INSURANCE GUIDANCE',
+                    warning4: 'Grade 4: Proliferative DR — Emergency Laser/Surgical Intervention Required',
+                    warning3: 'Grade 3: Severe DR — Urgent Specialist Referral Required (within 2 weeks)',
+                    matched: 'Matched Hospital (Your ABHA Insurance ID: ',
+                    nearby: 'Recommended Hospitals Near You (No ABHA ID matched — showing nearby)',
+                    loc: 'Location: ', phone: 'Phone: ', contact: 'Contact hospital directly',
+                    gov: 'Government facility — may be free or low cost',
+                    estCost: 'Estimated Surgery Cost: Rs ',
+                    accepts: 'Accepts Ayushman Bharat (PMJAY) — Free for eligible patients',
+                    covers: 'Insurance covers: Rs '
+                },
+                'ta-IN': {
+                    guidance: 'அறுவை சிகிச்சை பரிந்துரை மற்றும் காப்பீட்டு வழிகாட்டுதல்',
+                    warning4: 'தரம் 4: தீவிர விழித்திரை நோய் — அவசர லேசர்/அறுவை சிகிச்சை தேவை',
+                    warning3: 'தரம் 3: கடுமையான விழித்திரை நோய் — அவசர நிபுணர் பரிந்துரை தேவை (2 வாரங்களுக்குள்)',
+                    matched: 'பொருந்திய மருத்துவமனை (உங்கள் ABHA காப்பீட்டு ஐடி: ',
+                    nearby: 'உங்களுக்கு அருகிலுள்ள பரிந்துரைக்கப்பட்ட மருத்துவமனைகள் (ABHA ஐடி இல்லை)',
+                    loc: 'இடம்: ', phone: 'தொலைபேசி: ', contact: 'நேரடியாக மருத்துவமனையைத் தொடர்பு கொள்ளவும்',
+                    gov: 'அரசு மருத்துவமனை — இலவசமாக அல்லது குறைந்த செலவில் இருக்கலாம்',
+                    estCost: 'மதிப்பிடப்பட்ட அறுவை சிகிச்சை செலவு: ரூ ',
+                    accepts: 'ஆயுஷ்மான் பாரத் (PMJAY) ஏற்கப்படுகிறது — தகுதியுள்ள நோயாளிகளுக்கு இலவசம்',
+                    covers: 'காப்பீடு கவரேஜ்: ரூ '
+                },
+                'hi-IN': {
+                    guidance: 'सर्जिकल रेफरल और बीमा मार्गदर्शन',
+                    warning4: 'ग्रेड 4: गंभीर प्रोलिफेरेटिव डीआर — आपातकालीन लेजर/सर्जिकल हस्तक्षेप आवश्यक',
+                    warning3: 'ग्रेड 3: गंभीर डीआर — तत्काल विशेषज्ञ संदर्भ आवश्यक (2 सप्ताह के भीतर)',
+                    matched: 'मेल खाने वाला अस्पताल (आपका ABHA बीमा ID: ',
+                    nearby: 'आपके आस-पास अनुशंसित अस्पताल (कोई ABHA ID नहीं)',
+                    loc: 'स्थान: ', phone: 'फोन: ', contact: 'सीधे अस्पताल से संपर्क करें',
+                    gov: 'सरकारी अस्पताल — मुफ्त या कम लागत',
+                    estCost: 'अनुमानित सर्जरी लागत: रु ',
+                    accepts: 'आयुष्मान भारत (PMJAY) स्वीकार्य — पात्र मरीजों के लिए मुफ्त',
+                    covers: 'बीमा कवरेज: रु '
+                },
+                'te-IN': {
+                    guidance: 'శస్త్రచికిత్స రిఫరల్ మరియు బీమా మార్గదర్శకత్వం',
+                    warning4: 'గ్రేడ్ 4: తీవ్రమైన డిఆర్ — అత్యవసర లేజర్/శస్త్రచికిత్స అవసరం',
+                    warning3: 'గ్రేడ్ 3: తీవ్రమైన డిఆర్ — అత్యవసర స్పెషలిస్ట్ రిఫరల్ అవసరం (2 వారాల్లో)',
+                    matched: 'సరిపోలిన ఆసుపత్రి (మీ ABHA బీమా ID: ',
+                    nearby: 'మీకు సమీపంలోని సిఫార్సు చేయబడిన ఆసుపత్రులు (ABHA ID లేదు)',
+                    loc: 'స్థలం: ', phone: 'ఫోన్‌: ', contact: 'ఆసుపత్రిని నేరుగా సంప్రదించండి',
+                    gov: 'ప్రభుత్వ ఆసుపత్రి — ఉచితం లేదా తక్కువ ఖర్చు',
+                    estCost: 'అంచనా వేసిన శస్త్రచికిత్స ఖర్చు: రూ ',
+                    accepts: 'ఆయుష్మాన్ భారత్ (PMJAY) అంగీకరించబడుతుంది — అర్హులకు ఉచితం',
+                    covers: 'బీమా కవరేజ్: రూ '
+                },
+                'kn-IN': {
+                    guidance: 'ಶಸ್ತ್ರಚಿಕಿತ್ಸೆ ಶಿಫಾರಸು ಮತ್ತು ವಿಮಾ ಮಾರ್ಗದರ್ಶನ',
+                    warning4: 'ಶ್ರೇಣಿ 4: ತೀವ್ರವಾದ ಡಿಆರ್ — ತುರ್ತು ಲೇಸರ್/ಶಸ್ತ್ರಚಿಕಿತ್ಸೆ ಅಗತ್ಯವಿದೆ',
+                    warning3: 'ಶ್ರೇಣಿ 3: ತೀವ್ರವಾದ ಡಿಆರ್ — ತುರ್ತು ತಜ್ಞರ ಶಿಫಾರಸು ಅಗತ್ಯವಿದೆ (2 ವಾರಗಳಲ್ಲಿ)',
+                    matched: 'ಹೊಂದಿಕೆಯಾದ ಆಸ್ಪತ್ರೆ (ನಿಮ್ಮ ABHA ವಿಮಾ ID: ',
+                    nearby: 'ನಿಮ್ಮ ಹತ್ತಿರದ ಶಿಫಾರಸು ಮಾಡಿದ ಆಸ್ಪತ್ರೆಗಳು (ABHA ID ಇಲ್ಲ)',
+                    loc: 'ಸ್ಥಳ: ', phone: 'ದೂರವಾಣಿ: ', contact: 'ಆಸ್ಪತ್ರೆಯನ್ನು ನೇರವಾಗಿ ಸಂಪರ್ಕಿಸಿ',
+                    gov: 'ಸರ್ಕಾರಿ ಆಸ್ಪತ್ರೆ — ಉಚಿತ ಅಥವಾ ಕಡಿಮೆ ವೆಚ್ಚ',
+                    estCost: 'ಅಂದಾಜು ಶಸ್ತ್ರಚಿಕಿತ್ಸೆ ವೆಚ್ಚ: ರೂ ',
+                    accepts: 'ಆಯುಷ್ಮಾನ್ ಭಾರತ್ (PMJAY) ಸ್ವೀಕರಿಸಲಾಗುತ್ತದೆ — ಅರ್ಹರಿಗೆ ಉಚಿತ',
+                    covers: 'ವಿಮೆ ಕವರ್: ರೂ '
+                },
+                'ml-IN': {
+                    guidance: 'ശസ്ത്രക്രിയ ശുപാർശയും ഇൻഷുറൻസ് മാർഗ്ഗനിർദ്ദേശവും',
+                    warning4: 'ഗ്രേഡ് 4: ഗുരുതരമായ ഡിആർ — അടിയന്തര ലേസർ/ശസ്ത്രക്രിയ ആവശ്യമാണ്',
+                    warning3: 'ഗ്രേഡ് 3: ഗുരുതരമായ ഡിആർ — അടിയന്തര സ്പെഷ്യലിസ്റ്റ് ശുപാർശ ആവശ്യമാണ് (2 ആഴ്ചയ്ക്കുള്ളിൽ)',
+                    matched: 'അനുയോജ്യമായ ആശുപത്രി (നിങ്ങളുടെ ABHA ഇൻഷുറൻസ് ID: ',
+                    nearby: 'നിങ്ങളുടെ അടുത്തുള്ള ശുപാർശ ചെയ്യുന്ന ആശുപത്രികൾ (ABHA ID ഇല്ല)',
+                    loc: 'സ്ഥലം: ', phone: 'ഫോൺ: ', contact: 'ആശുപത്രിയുമായി നേരിട്ട് ബന്ധപ്പെടുക',
+                    gov: 'സർക്കാർ ആശുപത്രി — സൗജന്യമായിരിക്കാം',
+                    estCost: 'ഏകദേശ ശസ്ത്രക്രിയാ ചെലവ്: രൂ ',
+                    accepts: 'ആയുഷ്മാൻ ഭാരത് (PMJAY) സ്വീകരിക്കുന്നു — അർഹർക്ക് സൗജന്യം',
+                    covers: 'ഇൻഷുറൻസ് പരിരക്ഷ: രൂ '
+                }
+            };
+            const HT = HOSP_TRANSLATIONS[language] || HOSP_TRANSLATIONS['en-IN'];
+
+            // Lookup hospital by ABHA ID
+            let hospitalData = null;
+            let nearbyHospitals = [];
+            if (abhaId) {
+                hospitalData = await lookupHospitalByABHA(abhaId);
+            }
+            if (!hospitalData && patientState) {
+                nearbyHospitals = await getNearbyHospitals(patientState, 3);
+            }
+            
+            if (currentY + 60 > 270) {
+                drawReportFooter(pdf, currentPage, 2, fontFamily);
+                pdf.addPage();
+                currentPage++;
+                currentY = drawReportHeader(pdf, reportId, 15, T, fontFamily);
+            }
+
+            // Draw section header
+            currentY += 8;
+            pdf.setFont(fontFamily, 'bold');
+            pdf.setFontSize(11);
+            pdf.setTextColor(192, 0, 0);
+            pdf.text(HT.guidance, MARGIN, currentY);
+            currentY += 5;
+            // Draw warning box
+            pdf.setDrawColor(192, 0, 0);
+            pdf.setLineWidth(1);
+            pdf.roundedRect(MARGIN, currentY, CONTENT_WIDTH, 12, 2, 2, 'S');
+            pdf.setFontSize(9);
+            pdf.setFont(fontFamily, 'bold');
+            pdf.setTextColor(192, 0, 0);
+            const warningMsg = result.grade === 4 ? HT.warning4 : HT.warning3;
+            pdf.text(warningMsg, PAGE_WIDTH/2, currentY + 7.5, { align: 'center' });
+            currentY += 18;
+            // Draw hospital info
+            const hospitals = hospitalData ? [hospitalData] : nearbyHospitals;
+            const sectionLabel = hospitalData
+            ? HT.matched + abhaId + ')'
+            : HT.nearby;
+            pdf.setTextColor(46, 117, 182);
+            pdf.setFontSize(9);
+            pdf.setFont(fontFamily, 'bold');
+            pdf.text(sectionLabel, MARGIN, currentY);
+            currentY += 6;
+            hospitals.forEach((h, idx) => {
+                if (currentY + 35 > 270) {
+                    drawReportFooter(pdf, currentPage, 2, fontFamily);
+                    pdf.addPage();
+                    currentPage++;
+                    currentY = drawReportHeader(pdf, reportId, 15, T, fontFamily);
+                }
+                pdf.setFillColor(245, 245, 245);
+                pdf.rect(MARGIN, currentY, CONTENT_WIDTH, 28, 'F');
+                pdf.setTextColor(30, 30, 30);
+                pdf.setFont(fontFamily, 'bold');
+                pdf.setFontSize(10);
+                pdf.text(h.hospital_name, MARGIN + 5, currentY + 7);
+                pdf.setFont(fontFamily, 'normal');
+                pdf.setFontSize(8);
+                pdf.setTextColor(80, 80, 80);
+                pdf.text(HT.loc + h.location, MARGIN + 5, currentY + 13);
+                pdf.text(HT.phone + (h.phone || HT.contact), MARGIN + 5, currentY + 18);
+                const costText = h.surgery_min_cost === 0
+                ? HT.gov
+                : HT.estCost + h.surgery_min_cost.toLocaleString('en-IN')
+                + ' - ' + h.surgery_max_cost.toLocaleString('en-IN');
+                pdf.text(costText, MARGIN + 5, currentY + 23);
+                if (h.accepts_pmjay) {
+                    pdf.setTextColor(0, 128, 0);
+                    pdf.text(HT.accepts, MARGIN + 100, currentY + 13);
+                    pdf.text(HT.covers + h.insurance_covers_min.toLocaleString('en-IN')
+                    + ' - ' + h.insurance_covers_max.toLocaleString('en-IN'), MARGIN + 100, currentY + 18);
+                }
+                currentY += 32;
+            });
+        }
 
         // 6. Security & Verification (QR Code) — placed after protocol table
         currentY += 8;

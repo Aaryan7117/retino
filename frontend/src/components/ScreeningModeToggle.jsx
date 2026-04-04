@@ -21,7 +21,7 @@ export default function ScreeningModeToggle({ mode, onToggle }) {
         <div className="flex items-center bg-[#111827] border border-[#1F2937] rounded-full p-1 shadow-inner">
           <button
             onClick={() => handleToggle(MODES.STANDARD)}
-            className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${
+            className={`px-2 py-1 sm:px-3 sm:py-1.5 rounded-full text-[8px] sm:text-[10px] font-black uppercase tracking-widest transition-all ${
               !isPreventative
                 ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
                 : 'text-slate-500 hover:text-slate-300'
@@ -31,7 +31,7 @@ export default function ScreeningModeToggle({ mode, onToggle }) {
           </button>
           <button
             onClick={() => handleToggle(MODES.PREVENTATIVE)}
-            className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${
+            className={`px-2 py-1 sm:px-3 sm:py-1.5 rounded-full text-[8px] sm:text-[10px] font-black uppercase tracking-widest transition-all ${
               isPreventative
                 ? 'bg-amber-600 text-white shadow-md shadow-amber-500/20'
                 : 'text-slate-500 hover:text-slate-300'

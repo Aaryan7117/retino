@@ -20,7 +20,7 @@ export default function PDFGenerator({ patient, result, imagePreview, record, la
     const handleGenerate = async () => {
         setStatus('generating');
         try {
-            await generatePDF({ patient, result, imagePreview, record, language });
+            await generatePDF({ patient, result, imagePreview, record, language, abhaId: patient?.abhaId || '', patientState: patient?.state || '' });
             setStatus('done');
             setTimeout(() => setStatus('idle'), 3000);
         } catch (err) {

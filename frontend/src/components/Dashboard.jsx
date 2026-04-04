@@ -62,8 +62,8 @@ export default function Dashboard() {
                 <div className="absolute inset-0 bg-[radial-gradient(#1e2937_1px,transparent_1px)] bg-[size:24px_24px] opacity-30 z-0"></div>
                 <div className="absolute -top-24 -right-24 w-96 h-96 bg-violet-600/10 rounded-full blur-[100px] pointer-events-none"></div>
                 
-                <div className="relative z-10 p-8 md:p-14 flex flex-col md:flex-row items-center justify-between gap-10">
-                    <div className="text-center md:text-left space-y-6 max-w-xl">
+                <div className="relative z-10 p-6 sm:p-8 md:p-14 flex flex-col md:flex-row items-center justify-between gap-8 md:gap-10">
+                    <div className="text-center md:text-left space-y-6 w-full max-w-xl">
                         <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-400 text-[10px] font-black uppercase tracking-[0.2em]">
                             <span className="relative flex h-2 w-2">
                                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75"></span>

@@ -103,7 +103,9 @@ function InstallButton() {
       <svg className="w-3.5 h-3.5 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
       </svg>
-      {isAlreadyInstalled ? 'Installed' : 'Install App'}
+      <span className="hidden sm:inline">
+        {isAlreadyInstalled ? 'Installed' : 'Install App'}
+      </span>
     </button>
   );
 }
@@ -183,8 +185,8 @@ function AppContent({ userSession, userProfile, setUserProfile, profileLoading, 
     <div className="min-h-screen bg-[#0A0F1E] flex flex-col text-slate-100">
       {/* HEADER */}
       <header className="bg-[#0A0F1E] border-b border-[#1F2937] sticky top-0 z-50 pt-safe">
-        <div className="max-w-[1440px] mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="max-w-[1440px] mx-auto px-2 sm:px-4 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2 sm:gap-3">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-600 to-blue-600 flex items-center justify-center shadow-lg shadow-violet-500/20 shrink-0">
               <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
