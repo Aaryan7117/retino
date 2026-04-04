@@ -88,7 +88,27 @@ export default function Scanner() {
     const [progressMsg, setProgressMsg] = useState('');
     const [errorMsg, setErrorMsg] = useState('');
 
-    const [patientData, setPatientData] = useState({ name: '', age: '', gender: 'Male', diabeticSince: '', contact: '' });
+    const [patientData, setPatientData] = useState(() => {
+        const saved = sessionStorage.getItem('retinascan_patient_draft');
+        return saved ? JSON.parse(saved) : { name: '', age: '', gender: 'Male', diabeticSince: '', contact: '' };
+    });
+
+    // Save/Restore image previews to/from session storage (PWA persistence)
+    useEffect(() => {
+        if (rightEye?.preview?.startsWith('data:')) {
+            sessionStorage.setItem('retinascan_right_preview', rightEye.preview);
+        }
+        if (leftEye?.preview?.startsWith('data:')) {
+            sessionStorage.setItem('retinascan_left_preview', leftEye.preview);
+        }
+    }, [rightEye?.preview, leftEye?.preview]);
+
+    useEffect(() => {
+        const rCache = sessionStorage.getItem('retinascan_right_preview');
+        const lCache = sessionStorage.getItem('retinascan_left_preview');
+        if (rCache) setRightEye({ file: null, preview: rCache, restoredFromCache: true });
+        if (lCache) setLeftEye({ file: null, preview: lCache, restoredFromCache: true });
+    }, []);
 
     // Save draft to session storage
     useEffect(() => {
@@ -97,6 +117,17 @@ export default function Scanner() {
 
     const handleScan = async () => {
         if (!rightEye || isAnalyzing) return;
+
+        // Guard: if image was restored from cache (base64 string in sessionStorage),
+        // we lack the original File object needed for inference. Ask for re-upload.
+        if (rightEye.restoredFromCache && !rightEye.file) {
+            setErrorMsg('Session restored from cache. Please re-upload or re-capture images to proceed with AI analysis.');
+            return;
+        }
+        if (leftEye?.restoredFromCache && !leftEye.file) {
+            setErrorMsg('Session restored from cache. Please re-upload or re-capture images to proceed with AI analysis.');
+            return;
+        }
 
         if (!patientData.name.trim() || !patientData.age || !patientData.contact.trim()) {
             setErrorMsg('Mandatory clinical data missing: Name, Age, and Contact required.');
@@ -116,6 +147,20 @@ export default function Scanner() {
                     ? analyzeImage(leftEye.file, (msg) => setProgressMsg(`Left Eye: ${msg}`))
                     : Promise.resolve(null),
             ]);
+
+            const deriveRiskScore = (res) => {
+                if (!res) return 0;
+                const probs = res.class_probabilities;
+                if (probs && probs.length === 5) {
+                    const weights = [0, 25, 50, 75, 100];
+                    return probs.reduce((acc, p, i) => acc + (p * weights[i]), 0);
+                }
+                return res.grade * 22;
+            };
+
+            const rightRisk = deriveRiskScore(rightInferenceResult);
+            const leftRisk = deriveRiskScore(leftInferenceResult);
+            const overallRiskScore = Math.max(rightRisk, leftRisk);
 
             const [rightHeatB64, leftHeatB64, rightImgB64, leftImgB64] = await Promise.all([
                 rightInferenceResult.heatmapBlob ? blobToBase64(rightInferenceResult.heatmapBlob) : Promise.resolve(null),
@@ -147,6 +192,7 @@ export default function Scanner() {
                 patientId,
                 timestamp: now.toISOString(),
                 grade: overallGradeValue,
+                risk_score: overallRiskScore,
                 diagnosis: rightInferenceResult.diagnosis || rightInferenceResult.grade_label || '',
                 confidence: rightInferenceResult.confidence,
                 risk: overallGradeValue >= 3 ? 'HIGH' : overallGradeValue >= 2 ? 'MEDIUM' : 'LOW',
@@ -182,6 +228,9 @@ export default function Scanner() {
             await logAudit({ type: 'SCAN', patientId: patientRecord.id, grade: patientRecord.grade, confidence: patientRecord.confidence });
 
             navigate('/results', { state: { record: patientRecord } });
+            sessionStorage.removeItem('retinascan_patient_draft');
+            sessionStorage.removeItem('retinascan_right_preview');
+            sessionStorage.removeItem('retinascan_left_preview');
         } catch (err) {
             console.error('Analysis failed:', err);
             let displayError = err.message || 'Biometric analysis failed. Please verify image quality and retry.';

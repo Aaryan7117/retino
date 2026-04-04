@@ -71,18 +71,18 @@ export default function Dashboard() {
                             </span>
                             AI Diagnostics active
                         </div>
-                        <h2 className="text-4xl md:text-6xl font-black text-white leading-[1.1] tracking-tighter">
+                        <h2 className="text-3xl sm:text-5xl md:text-6xl font-black text-white leading-[1.1] tracking-tighter">
                             Precision <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-blue-400">Diagnosis</span> <br />
                             at Scale
                         </h2>
                         <p className="text-slate-400 text-lg font-medium leading-relaxed">
                             Screen for Diabetic Retinopathy in under 60 seconds with 94% clinical accuracy. Empowering primary healthcare with mobile AI.
                         </p>
-                        <div className="flex flex-wrap items-center justify-center md:justify-start gap-4 pt-2">
-                            <Link to="/scan" className="btn-primary px-8 py-4 rounded-2xl text-base shadow-2xl shadow-violet-600/30">
+                        <div className="flex flex-wrap items-center justify-center md:justify-start gap-4 pt-2 w-full">
+                            <Link to="/scan" className="btn-primary w-full sm:w-auto justify-center px-8 py-4 rounded-2xl text-base shadow-2xl shadow-violet-600/30">
                                 Start New Scan
                             </Link>
-                            <Link to="/camp" className="btn-secondary px-8 py-4 rounded-2xl text-base">
+                            <Link to="/camp" className="btn-secondary w-full sm:w-auto justify-center px-8 py-4 rounded-2xl text-base">
                                 View Patient Queue
                             </Link>
                         </div>

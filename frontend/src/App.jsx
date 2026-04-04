@@ -192,7 +192,7 @@ function AppContent({ userSession, userProfile, setUserProfile, profileLoading, 
               </svg>
             </div>
             <div className="flex flex-col">
-              <h1 className="text-white font-black text-base sm:text-lg leading-none tracking-tighter">
+              <h1 className="text-white font-black text-sm sm:text-base leading-none tracking-tighter">
                 RetinaScan <span className="text-violet-500">AI</span>
               </h1>
               <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1 hidden sm:block">
@@ -471,21 +471,21 @@ export default function App() {
   }
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
       // Fix 2: persist uid to localStorage for offline IndexedDB scoping
-      if (data?.user) {
-        localStorage.setItem('rs_uid', data.user.id);
+      if (session?.user) {
+        localStorage.setItem('rs_uid', session.user.id);
       }
       // Fix 3: read cached profile synchronously before async loads
-      const cachedUid = data?.user?.id;
+      const cachedUid = session?.user?.id;
       if (cachedUid) {
         const cached = localStorage.getItem(`rs_profile_${cachedUid}`);
         if (cached) setUserProfile(JSON.parse(cached));
       }
-      setUserSession(data?.user ?? null);
-      if (data?.user) {
+      setUserSession(session?.user ?? null);
+      if (session?.user) {
          syncPatientsFromCloud();
-         loadUserProfile(data.user.id).then(() => {
+         loadUserProfile(session.user.id).then(() => {
            setSessionChecked(true);
          });
       } else {
@@ -495,16 +495,17 @@ export default function App() {
     });
 
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      // Avoid flashing loading state on tab return (TOKEN_REFRESHED)
       if (session?.user) {
-         setProfileLoading(true); // Reset loading state when a user signs in
+         if (_event === 'SIGNED_IN') {
+             setProfileLoading(true);
+             syncPatientsFromCloud();
+             loadUserProfile(session.user.id);
+         }
          setUserSession(session.user);
-         // Fix 2: persist uid to localStorage on auth state change
          localStorage.setItem('rs_uid', session.user.id);
-         syncPatientsFromCloud();
-         loadUserProfile(session.user.id);
       } else {
          setUserSession(null);
-         // Fix 2: remove uid from localStorage on logout
          localStorage.removeItem('rs_uid');
          setUserProfile(null);
          setProfileLoading(false);
