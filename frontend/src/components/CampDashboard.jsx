@@ -4,6 +4,8 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { getAllPatients, deletePatient, getAuditLog } from '../utils/indexedDB';
+import { useScreeningMode } from '../utils/screeningContext';
+import { shouldRefer, MODE_CONFIG } from '../utils/screeningMode';
 
 /**
  * Export patient data to a CSV file for offline reporting.
@@ -366,9 +368,11 @@ export default function CampDashboard() {
         }
     }
 
+    const { mode } = useScreeningMode();
+
     const highRiskCount = patientRecords.filter(p => p.risk === 'HIGH').length;
     const moderateRiskCount = patientRecords.filter(p => p.risk === 'MEDIUM').length;
-    const totalReferralsNeeded = highRiskCount + moderateRiskCount;
+    const totalReferralsNeeded = patientRecords.filter(p => shouldRefer(p, mode)).length;
     const currentSessionDate = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
     const visiblePatientQueue = useMemo(() => {
@@ -384,7 +388,7 @@ export default function CampDashboard() {
         if (activeGradeFilter === 'high') {
             queue = queue.filter(p => p.risk === 'HIGH');
         } else if (activeGradeFilter === 'refer') {
-            queue = queue.filter(p => p.grade >= 2);
+            queue = queue.filter(p => shouldRefer(p, mode));
         } else if (activeGradeFilter !== 'all') {
             queue = queue.filter(p => p.grade === Number(activeGradeFilter));
         }
@@ -425,6 +429,16 @@ export default function CampDashboard() {
                     </div>
                 </div>
             </div>
+
+            {/* MODE BANNER */}
+            {mode === 'preventative' && (
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex items-center justify-between text-amber-500 animate-fade-in shadow-lg shadow-amber-500/5">
+                    <div className="flex items-center gap-3">
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                        <p className="text-xs font-black uppercase tracking-widest">PREVENTATIVE MODE ACTIVE — Grade 1+ cases with Risk Score &gt; 35 are flagged</p>
+                    </div>
+                </div>
+            )}
 
             {/* METRICS */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">

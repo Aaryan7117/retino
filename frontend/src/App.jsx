@@ -21,10 +21,13 @@ import DoctorOnboarding from './components/DoctorOnboarding';
 import PatientOnboarding from './components/PatientOnboarding';
 import FindDoctors from './components/FindDoctors';
 import ProfilePage from './components/ProfilePage';
+import ScreeningModeToggle from './components/ScreeningModeToggle';
 
 import { logout } from './utils/auth';
 import { flushSyncQueue, syncPatientsFromCloud } from './utils/indexedDB';
 import { supabase } from './utils/supabaseClient';
+import { loadMode, saveMode } from './utils/screeningMode';
+import { ScreeningContext, useScreeningMode } from './utils/screeningContext';
 
 /**
  * Toast notification for service worker updates.
@@ -118,6 +121,8 @@ const BASE_NAVIGATION = [
  * Must be wrapped in BrowserRouter.
  */
 function AppContent({ userSession, userProfile, setUserProfile, profileLoading, sessionChecked, waitingServiceWorker, showUpdateToast, setShowUpdateToast }) {
+  // Use context for screening mode to avoid prop drilling and shadowing
+  const { mode: screeningMode, setMode: setScreeningModeAndSave } = useScreeningMode();
   const [menuOpen, setMenuOpen] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const location = useLocation();
@@ -156,19 +161,22 @@ function AppContent({ userSession, userProfile, setUserProfile, profileLoading, 
     return <Navigate to="/" replace />;
   }
 
-  // No profile at all — show role selection (only after session has been confirmed)
-  if (userSession && !userProfile && !profileLoading && sessionChecked) {
-    return <RoleSelect userId={userSession.id} onComplete={(profile) => setUserProfile(profile)} />;
+  // No profile OR no role set = show role selection
+  const needsRoleSelection = userSession && !profileLoading &&
+    (!userProfile || !userProfile.role);
+
+  // Has role but onboarding not complete = redirect to onboarding
+  const needsOnboarding = userSession && userProfile &&
+    userProfile.role && !userProfile.profile_complete;
+
+  if (needsRoleSelection) {
+    return <RoleSelect userId={userSession.id}
+      onComplete={(profile) => setUserProfile(profile)} />;
   }
 
-  // Has profile but onboarding not complete — redirect to the correct onboarding form.
-  // CRITICAL: Do NOT redirect while profileLoading is true.
-  // Also skip redirect if essential fields are already filled (auto-repair instead).
-  if (userSession && userProfile && !isEffectivelyComplete && !profileLoading) {
-    const onboardingPath = userProfile.role === 'doctor' ? '/onboarding/doctor' : '/onboarding/patient';
-    if (!location.pathname.startsWith('/onboarding')) {
-       return <Navigate to={onboardingPath} replace />;
-    }
+  if (needsOnboarding && !location.pathname.startsWith('/onboarding')) {
+    const path = userProfile.role === 'doctor' ? '/onboarding/doctor' : '/onboarding/patient';
+    return <Navigate to={path} replace />;
   }
 
   return (
@@ -199,6 +207,10 @@ function AppContent({ userSession, userProfile, setUserProfile, profileLoading, 
             <OfflineIndicator />
             <div className="h-6 w-px bg-[#1F2937] mx-0.5 sm:mx-1 hidden sm:block"></div>
             
+            <ScreeningModeToggle mode={screeningMode} onToggle={setScreeningModeAndSave} />
+            
+            <div className="h-6 w-px bg-[#1F2937] mx-0.5 sm:mx-1 hidden sm:block"></div>
+
             <div className="relative">
               <button
                 onClick={() => setMenuOpen(!menuOpen)}
@@ -398,6 +410,20 @@ export default function App() {
   const [userProfile, setUserProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(true);
   const [sessionChecked, setSessionChecked] = useState(false);
+  const [screeningMode, setScreeningMode] = useState('standard');
+
+  const setScreeningModeAndSave = async (mode) => {
+    setScreeningMode(mode);
+    if (userSession) {
+      await saveMode(userSession.id, mode);
+    }
+  };
+
+  useEffect(() => {
+    if (userSession) {
+      loadMode(userSession.id).then(m => setScreeningMode(m));
+    }
+  }, [userSession]);
 
   async function loadUserProfile(userId) {
     if (!userId) { setProfileLoading(false); return; }
@@ -512,17 +538,19 @@ export default function App() {
   }, []);
 
   return (
-    <BrowserRouter>
-      <AppContent 
-        userSession={userSession}
-        userProfile={userProfile}
-        setUserProfile={setUserProfile}
-        profileLoading={profileLoading}
-        sessionChecked={sessionChecked}
-        waitingServiceWorker={waitingServiceWorker}
-        showUpdateToast={showUpdateToast}
-        setShowUpdateToast={setShowUpdateToast}
-      />
-    </BrowserRouter>
+    <ScreeningContext.Provider value={{ mode: screeningMode, setMode: setScreeningModeAndSave }}>
+      <BrowserRouter>
+        <AppContent 
+          userSession={userSession}
+          userProfile={userProfile}
+          setUserProfile={setUserProfile}
+          profileLoading={profileLoading}
+          sessionChecked={sessionChecked}
+          waitingServiceWorker={waitingServiceWorker}
+          showUpdateToast={showUpdateToast}
+          setShowUpdateToast={setShowUpdateToast}
+        />
+      </BrowserRouter>
+    </ScreeningContext.Provider>
   );
 }

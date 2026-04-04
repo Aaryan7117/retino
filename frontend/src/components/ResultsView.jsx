@@ -9,6 +9,7 @@ import ABDMIntegration from './ABDMIntegration';
 import SplitHeatmapView from './SplitHeatmapView';
 import LongitudinalChart from './LongitudinalChart';
 import { savePatient, getPatientById } from '../utils/indexedDB';
+import { useScreeningMode } from '../utils/screeningContext';
 
 const GRADE_INFO = [
     { label: 'No Diabetic Retinopathy', cls: 'grade-0', urgency: 'Annual checkup', accent: 'border-l-emerald-500', bg: 'bg-emerald-500/5' },
@@ -118,6 +119,43 @@ function GradeProbChart({ probs }) {
     );
 }
 
+function RiskProbabilityMeter({ riskScore, mode }) {
+    const pct = Math.min(100, Math.max(0, riskScore || 0));
+    const threshold = mode === 'preventative' ? 35 : 50;
+    const isFlagged = pct > threshold;
+    return (
+        <div className='card-elevated space-y-3 bg-[#111827]'>
+            <div className='flex justify-between items-center'>
+                <p className='section-label ml-0'>Risk Probability Score</p>
+                <span className={isFlagged ? 'text-amber-400 font-black text-sm' : 'text-slate-500 text-sm'}>
+                    {isFlagged ? `FLAGGED in ${mode === 'preventative' ? 'Preventative' : 'Standard'} Mode` : 'Within Normal Range'}
+                </span>
+            </div>
+            <div className='h-4 bg-[#0A0F1E] rounded-full overflow-hidden relative border border-[#1F2937]/50'>
+                <div className='h-full rounded-full transition-all duration-700'
+                    style={{ 
+                        width: pct + '%',
+                        background: pct > 75 ? '#ef4444' : pct > 50 ? '#f97316' : pct > 35 ? '#f59e0b' : '#10b981' 
+                    }} 
+                />
+                <div className='absolute top-0 h-full border-l-2 border-white/40'
+                    style={{ left: threshold + '%' }} title={'Referral threshold: ' + threshold} />
+            </div>
+            <div className='flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-500'>
+                <span>0</span>
+                <span className='text-slate-400'>Threshold: {threshold}</span>
+                <span>100</span>
+            </div>
+            <p className='text-[10px] uppercase font-bold tracking-wider text-slate-500 mt-2'>
+                Risk Score: <span className="text-white">{pct}/100</span>
+                {mode === 'preventative' && pct > threshold && pct < 50
+                    ? ' — FLAGGED IN PREVENTATIVE MODE ONLY.'
+                    : ''}
+            </p>
+        </div>
+    );
+}
+
 /**
  * Main ResultsView Component
  * Reads scan results from React Router state and renders the appropriate layout.
@@ -136,6 +174,7 @@ export default function ResultsView() {
     const [waTarget, setWaTarget] = useState(null); // 'legacy' or 'dual'
     const [selectedLanguage, setSelectedLanguage] = useState('en-IN');
     const [viewMode, setViewMode] = useState(0);
+    const { mode } = useScreeningMode();
 
     // Effect: Load from IndexedDB if State is lost (e.g. Refresh)
     useEffect(() => {
@@ -365,9 +404,12 @@ export default function ResultsView() {
 
                     {/* Probability Distributions (Common component) */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                        {(activeRecord?.rightEye?.class_probabilities?.length > 0 || result?.class_probabilities?.length > 0) && (
-                            <GradeProbChart probs={activeRecord?.rightEye?.class_probabilities || result.class_probabilities} />
-                        )}
+                        <div className="space-y-8">
+                            {(activeRecord?.rightEye?.class_probabilities?.length > 0 || result?.class_probabilities?.length > 0) && (
+                                <GradeProbChart probs={activeRecord?.rightEye?.class_probabilities || result.class_probabilities} />
+                            )}
+                            <RiskProbabilityMeter riskScore={result?.risk_score} mode={mode} />
+                        </div>
                         
                         {/* History Insight */}
                         {(patientData?.contact || activeRecord?.contact) && (
