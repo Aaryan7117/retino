@@ -158,8 +158,10 @@ function AppContent({ userSession, setUserSession, userProfile, setUserProfile, 
           };
           setUserSession(offlineUser);
           setUserProfile(offlineProfile);
-          localStorage.setItem('rs_uid', offlineUser.id);
-          localStorage.setItem(`rs_profile_${offlineUser.id}`, JSON.stringify(offlineProfile));
+          // Use sessionStorage (tab-scoped) so the offline demo session
+          // never persists across browser restarts or blocks real user login.
+          sessionStorage.setItem('rs_offline_uid', offlineUser.id);
+          sessionStorage.setItem(`rs_offline_profile`, JSON.stringify(offlineProfile));
         }}
       />
     );
@@ -513,14 +515,8 @@ export default function App() {
            setSessionChecked(true);
          });
       } else {
-         const cachedUid = localStorage.getItem('rs_uid');
-         if (cachedUid === 'offline-clinician-phc') {
-           const cached = localStorage.getItem(`rs_profile_${cachedUid}`);
-           if (cached) {
-             setUserSession({ id: cachedUid, email: 'field-clinician@rural-phc.gov.in', user_metadata: { role: 'doctor' } });
-             setUserProfile(JSON.parse(cached));
-           }
-         }
+         // No real Supabase session — show login screen.
+         // Do NOT auto-restore any hardcoded offline identity from localStorage.
          setSessionChecked(true);
          setProfileLoading(false);
       }
@@ -537,12 +533,12 @@ export default function App() {
          setUserSession(session.user);
          localStorage.setItem('rs_uid', session.user.id);
       } else {
-         const cachedUid = localStorage.getItem('rs_uid');
-         if (cachedUid !== 'offline-clinician-phc') {
-           setUserSession(null);
-           localStorage.removeItem('rs_uid');
-           setUserProfile(null);
-         }
+         // Supabase fired a sign-out event — always clear session state.
+         setUserSession(null);
+         setUserProfile(null);
+         localStorage.removeItem('rs_uid');
+         sessionStorage.removeItem('rs_offline_uid');
+         sessionStorage.removeItem('rs_offline_profile');
          setProfileLoading(false);
       }
     });

@@ -126,18 +126,30 @@ export async function savePatient(patientRecord) {
 
     if (!user) throw new Error("No user");
 
-    // Duplicate check: skip insert if this patient_id already exists for this user
+    // Duplicate check: if this patient_id already exists for this user, UPDATE it!
     const patientIdToCheck = patientRecord.patientId || patientRecord.id || '';
     if (patientIdToCheck) {
       const { data: existing } = await supabase
         .from('patients')
-        .select('id')
+        .select('id, abha_id, abdm_insurance_id')
         .eq('patient_id', patientIdToCheck)
         .eq('user_id', user.id)
         .maybeSingle();
       if (existing) {
-        console.log('[savePatient] Duplicate blocked:', patientIdToCheck);
-        return; // already saved — stop here
+        console.log('[savePatient] Patient exists, updating fields for:', patientIdToCheck);
+        const updates = {};
+        const newAbha = patientRecord.abhaId || patientRecord.abha_id;
+        if (newAbha && newAbha !== existing.abha_id) {
+          updates.abha_id = newAbha;
+        }
+        const newAbdm = patientRecord.abdmInsuranceId || patientRecord.abdm_insurance_id;
+        if (newAbdm && newAbdm !== existing.abdm_insurance_id) {
+          updates.abdm_insurance_id = newAbdm;
+        }
+        if (Object.keys(updates).length > 0) {
+          await supabase.from('patients').update(updates).eq('id', existing.id);
+        }
+        return; // already saved & updated — stop here
       }
     }
 
@@ -174,6 +186,9 @@ export async function savePatient(patientRecord) {
         risk_score: patientRecord.risk_score || 0,
         urgency: patientRecord.urgency || '',
         created_at: patientRecord.timestamp || new Date().toISOString(),
+        // ABHA / ABDM identifiers stored separately per SIH26038 requirement
+        abha_id: patientRecord.abhaId || patientRecord.abha_id || null,
+        abdm_insurance_id: patientRecord.abdmInsuranceId || patientRecord.abdm_insurance_id || null,
         // Legacy single columns — kept for backward compat
         image_url:   odImageUrl,
         heatmap_url: odHeatmapUrl,
@@ -227,7 +242,7 @@ export async function syncPatientsFromCloud() {
     // Merge them down to local storage
     for (const cp of cloudPatients) {
       const localRecord = {
-        id: cp.patient_id || cp.id.toString(), // Prefer string TN-ID over Postgres integer
+        id: cp.patient_id || cp.id.toString(),
         patientId: cp.patient_id || cp.id.toString(),
         name: cp.name,
         age: cp.age,
@@ -243,10 +258,13 @@ export async function syncPatientsFromCloud() {
         timestamp: cp.created_at,
         isFromCloud: true,
         user_id: user.id,
+        // ABHA / ABDM identifiers
+        abhaId: cp.abha_id || '',
+        abdmInsuranceId: cp.abdm_insurance_id || '',
         // Legacy single columns
         image_url:   cp.image_url   || null,
         heatmap_url: cp.heatmap_url || null,
-        // Per-eye cloud URLs — used by DoctorPortal, CampDashboard, ResultsView
+        // Per-eye cloud URLs
         od_image_url:   cp.od_image_url   || cp.image_url   || null,
         os_image_url:   cp.os_image_url   || null,
         od_heatmap_url: cp.od_heatmap_url || cp.heatmap_url || null,
@@ -410,6 +428,9 @@ export async function flushSyncQueue() {
             risk_score: patientRecord.risk_score || 0,
             urgency: patientRecord.urgency || '',
             created_at: patientRecord.timestamp || new Date().toISOString(),
+            // ABHA / ABDM identifiers stored separately per SIH26038 requirement
+            abha_id: patientRecord.abhaId || patientRecord.abha_id || null,
+            abdm_insurance_id: patientRecord.abdmInsuranceId || patientRecord.abdm_insurance_id || null,
             // Map the cloud-uploaded URLs
             image_url:   odImageUrl,
             heatmap_url: odHeatmapUrl,
@@ -533,4 +554,63 @@ export async function blobToBase64(blobOrFile) {
     reader.readAsDataURL(blobOrFile);
   });
 }
+
+/**
+ * Updates the ABHA Health ID for a patient in IndexedDB and Supabase.
+ * @param {string} patientId - The patient_id or record id.
+ * @param {string} abhaId - The 14-digit ABHA ID.
+ */
+export async function updatePatientAbha(patientId, abhaId) {
+  if (!abhaId) return;
+  const db = await getDB();
+  
+  // 1. Update IndexedDB local record
+  if (patientId) {
+    try {
+      const localRecord = await db.get(PATIENTS_STORE, patientId);
+      if (localRecord) {
+        localRecord.abhaId = abhaId;
+        localRecord.abha_id = abhaId;
+        await db.put(PATIENTS_STORE, localRecord);
+        console.log('[updatePatientAbha] Updated local IndexedDB record for:', patientId);
+      }
+    } catch (e) {
+      console.warn('[updatePatientAbha] IndexedDB update failed:', e);
+    }
+  }
+
+  // 2. Update Supabase
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (patientId) {
+      let q = supabase.from('patients').update({ abha_id: abhaId });
+      if (user) q = q.eq('user_id', user.id);
+      const { data, error } = await q.or(`patient_id.eq.${patientId},id.eq.${patientId}`);
+      if (!error) {
+        console.log('[updatePatientAbha] Successfully updated ABHA in Supabase for:', patientId);
+        return;
+      }
+    }
+
+    // Fallback: if patientId didn't match or was missing, update latest patient for this user
+    if (user) {
+      const { data: latest } = await supabase
+        .from('patients')
+        .select('id')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (latest) {
+        await supabase.from('patients').update({ abha_id: abhaId }).eq('id', latest.id);
+        console.log('[updatePatientAbha] Updated ABHA for user latest patient in Supabase:', latest.id);
+      }
+    }
+  } catch (err) {
+    console.warn('[updatePatientAbha] Failed to update ABHA ID in Supabase:', err);
+  }
+}
+
 

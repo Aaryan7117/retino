@@ -305,7 +305,16 @@ function drawReportFooter(pdf, pageNumber, totalPages, fontFamily = 'helvetica')
  * @param {Object} data - Contains patient details, AI results, and image previews.
  * @returns {Promise<Object>} The generated report metadata.
  */
-export async function generatePDF({ patient = {}, result = {}, imagePreview = null, record = null, language = 'en-IN', abhaId = '', patientState = '' }) {
+export async function generatePDF({ 
+    patient = {}, 
+    result = {}, 
+    imagePreview = null, 
+    record = null, 
+    language = 'en-IN', 
+    abhaId = '', 
+    insuranceId = '', 
+    patientState = '' 
+}) {
     const T = PDF_TRANSLATIONS[language] || PDF_TRANSLATIONS['en-IN'];
     let currentY = 15;
 
@@ -603,13 +612,18 @@ export async function generatePDF({ patient = {}, result = {}, imagePreview = nu
             currentY += 8;
         });
 
-        // --- ABHA INSURANCE HOSPITAL LOOKUP ---
-        if (result.grade >= 3) {
+        // --- ABHA / ABDM INSURANCE HOSPITAL LOOKUP ---
+        const effectiveInsuranceId = (insuranceId || patient.abdmInsuranceId || patient.abdm_insurance_id || record?.abdmInsuranceId || record?.abdm_insurance_id || '').trim();
+        const effectiveAbhaId = (abhaId || patient.abhaId || patient.abha_id || record?.abhaId || record?.abha_id || '').trim();
+
+        if (result.grade >= 3 || effectiveInsuranceId || effectiveAbhaId) {
             const HOSP_TRANSLATIONS = {
                 'en-IN': {
                     guidance: 'SURGICAL REFERRAL & INSURANCE GUIDANCE',
                     warning4: 'Grade 4: Proliferative DR — Emergency Laser/Surgical Intervention Required',
                     warning3: 'Grade 3: Severe DR — Urgent Specialist Referral Required (within 2 weeks)',
+                    warning2: 'Grade 2: Moderate DR — Specialist Referral Recommended (within 3–6 months)',
+                    warningGeneral: 'Empanelled ABDM Healthcare Facility — Regular Screening & Care',
                     matched: 'Matched Hospital (Your ABHA Insurance ID: ',
                     nearby: 'Recommended Hospitals Near You (No ABHA ID matched — showing nearby)',
                     loc: 'Location: ', phone: 'Phone: ', contact: 'Contact hospital directly',
@@ -622,6 +636,8 @@ export async function generatePDF({ patient = {}, result = {}, imagePreview = nu
                     guidance: 'அறுவை சிகிச்சை பரிந்துரை மற்றும் காப்பீட்டு வழிகாட்டுதல்',
                     warning4: 'தரம் 4: தீவிர விழித்திரை நோய் — அவசர லேசர்/அறுவை சிகிச்சை தேவை',
                     warning3: 'தரம் 3: கடுமையான விழித்திரை நோய் — அவசர நிபுணர் பரிந்துரை தேவை (2 வாரங்களுக்குள்)',
+                    warning2: 'தரம் 2: மிதமான விழித்திரை நோய் — கண் மருத்துவரிடம் பரிந்துரை (3–6 மாதங்களுக்குள்)',
+                    warningGeneral: 'நீரிழிவு கண் பராமரிப்புக்கான அரசு அங்கீகரிக்கப்பட்ட மருத்துவமனை',
                     matched: 'பொருந்திய மருத்துவமனை (உங்கள் ABHA காப்பீட்டு ஐடி: ',
                     nearby: 'உங்களுக்கு அருகிலுள்ள பரிந்துரைக்கப்பட்ட மருத்துவமனைகள் (ABHA ஐடி இல்லை)',
                     loc: 'இடம்: ', phone: 'தொலைபேசி: ', contact: 'நேரடியாக மருத்துவமனையைத் தொடர்பு கொள்ளவும்',
@@ -634,6 +650,8 @@ export async function generatePDF({ patient = {}, result = {}, imagePreview = nu
                     guidance: 'सर्जिकल रेफरल और बीमा मार्गदर्शन',
                     warning4: 'ग्रेड 4: गंभीर प्रोलिफेरेटिव डीआर — आपातकालीन लेजर/सर्जिकल हस्तक्षेप आवश्यक',
                     warning3: 'ग्रेड 3: गंभीर डीआर — तत्काल विशेषज्ञ संदर्भ आवश्यक (2 सप्ताह के भीतर)',
+                    warning2: 'ग्रेड 2: मध्यम डीआर — विशेषज्ञ संदर्भ अनुशंसित (3-6 महीने के भीतर)',
+                    warningGeneral: 'मधुमेह नेत्र देखभाल के लिए संबद्ध स्वास्थ्य सेवा प्रदाता',
                     matched: 'मेल खाने वाला अस्पताल (आपका ABHA बीमा ID: ',
                     nearby: 'आपके आस-पास अनुशंसित अस्पताल (कोई ABHA ID नहीं)',
                     loc: 'स्थान: ', phone: 'फोन: ', contact: 'सीधे अस्पताल से संपर्क करें',
@@ -646,6 +664,8 @@ export async function generatePDF({ patient = {}, result = {}, imagePreview = nu
                     guidance: 'శస్త్రచికిత్స రిఫరల్ మరియు బీమా మార్గదర్శకత్వం',
                     warning4: 'గ్రేడ్ 4: తీవ్రమైన డిఆర్ — అత్యవసర లేజర్/శస్త్రచికిత్స అవసరం',
                     warning3: 'గ్రేడ్ 3: తీవ్రమైన డిఆర్ — అత్యవసర స్పెషలిస్ట్ రిఫరల్ అవసరం (2 వారాల్లో)',
+                    warning2: 'గ్రేడ్ 2: మితమైన డిఆర్ — స్పెషలిస్ట్ రిఫరల్ సిఫార్సు చేయబడింది (3–6 నెలల్లో)',
+                    warningGeneral: 'డయాబెటిక్ కంటి సంరక్షణ కోసం ఎంపానెల్ చేయబడిన ఆసుపత్రి',
                     matched: 'సరిపోలిన ఆసుపత్రి (మీ ABHA బీమా ID: ',
                     nearby: 'మీకు సమీపంలోని సిఫార్సు చేయబడిన ఆసుపత్రులు (ABHA ID లేదు)',
                     loc: 'స్థలం: ', phone: 'ఫోన్‌: ', contact: 'ఆసుపత్రిని నేరుగా సంప్రదించండి',
@@ -658,6 +678,8 @@ export async function generatePDF({ patient = {}, result = {}, imagePreview = nu
                     guidance: 'ಶಸ್ತ್ರಚಿಕಿತ್ಸೆ ಶಿಫಾರಸು ಮತ್ತು ವಿಮಾ ಮಾರ್ಗದರ್ಶನ',
                     warning4: 'ಶ್ರೇಣಿ 4: ತೀವ್ರವಾದ ಡಿಆರ್ — ತುರ್ತು ಲೇಸರ್/ಶಸ್ತ್ರಚಿಕಿತ್ಸೆ ಅಗತ್ಯವಿದೆ',
                     warning3: 'ಶ್ರೇಣಿ 3: ತೀವ್ರವಾದ ಡಿಆರ್ — ತುರ್ತು ತಜ್ಞರ ಶಿಫಾರಸು ಅಗತ್ಯವಿದೆ (2 ವಾರಗಳಲ್ಲಿ)',
+                    warning2: 'ಶ್ರೇಣಿ 2: ಮಧ್ಯಮ ಡಿಆರ್ — ತಜ್ಞರ ಶಿಫಾರಸು (3–6 ತಿಂಗಳುಗಳಲ್ಲಿ)',
+                    warningGeneral: 'ಮಧುಮೇಹ ಕಣ್ಣಿನ ಆರೈಕೆಗಾಗಿ ಮಾನ್ಯತೆ ಪಡೆದ ಆರೋಗ್ಯ ಪೂರೈಕೆದಾರರು',
                     matched: 'ಹೊಂದಿಕೆಯಾದ ಆಸ್ಪತ್ರೆ (ನಿಮ್ಮ ABHA ವಿಮಾ ID: ',
                     nearby: 'ನಿಮ್ಮ ಹತ್ತಿರದ ಶಿಫಾರಸು ಮಾಡಿದ ಆಸ್ಪತ್ರೆಗಳು (ABHA ID ಇಲ್ಲ)',
                     loc: 'ಸ್ಥಳ: ', phone: 'ದೂರವಾಣಿ: ', contact: 'ಆಸ್ಪತ್ರೆಯನ್ನು ನೇರವಾಗಿ ಸಂಪರ್ಕಿಸಿ',
@@ -670,6 +692,8 @@ export async function generatePDF({ patient = {}, result = {}, imagePreview = nu
                     guidance: 'ശസ്ത്രക്രിയ ശുപാർശയും ഇൻഷുറൻസ് മാർഗ്ഗനിർദ്ദേശവും',
                     warning4: 'ഗ്രേഡ് 4: ഗുരുതരമായ ഡിആർ — അടിയന്തര ലേസർ/ശസ്ത്രക്രിയ ആവശ്യമാണ്',
                     warning3: 'ഗ്രേഡ് 3: ഗുരുതരമായ ഡിആർ — അടിയന്തര സ്പെഷ്യലിസ്റ്റ് ശുപാർശ ആവശ്യമാണ് (2 ആഴ്ചയ്ക്കുള്ളിൽ)',
+                    warning2: 'ഗ്രേഡ് 2: മിതമായ ഡിആർ — സ്പെഷ്യലിസ്റ്റ് ശുപാർശ (3–6 മാസത്തിനുള്ളിൽ)',
+                    warningGeneral: 'പ്രമേഹ നേത്ര പരിചരണത്തിനുള്ള അംഗീകൃത ആശുപത്രി',
                     matched: 'അനുയോജ്യമായ ആശുപത്രി (നിങ്ങളുടെ ABHA ഇൻഷുറൻസ് ID: ',
                     nearby: 'നിങ്ങളുടെ അടുത്തുള്ള ശുപാർശ ചെയ്യുന്ന ആശുപത്രികൾ (ABHA ID ഇല്ല)',
                     loc: 'സ്ഥലം: ', phone: 'ഫോൺ: ', contact: 'ആശുപത്രിയുമായി നേരിട്ട് ബന്ധപ്പെടുക',
@@ -681,14 +705,37 @@ export async function generatePDF({ patient = {}, result = {}, imagePreview = nu
             };
             const HT = HOSP_TRANSLATIONS[language] || HOSP_TRANSLATIONS['en-IN'];
 
-            // Lookup hospital by ABHA ID
+            // Lookup hospital: search by patient's ABDM Insurance ID first, then ABHA ID
             let hospitalData = null;
             let nearbyHospitals = [];
-            if (abhaId) {
-                hospitalData = await lookupHospitalByABHA(abhaId);
+            const primarySearchId = effectiveInsuranceId || effectiveAbhaId;
+
+            if (effectiveInsuranceId) {
+                hospitalData = await lookupHospitalByABHA(effectiveInsuranceId);
             }
-            if (!hospitalData && patientState) {
-                nearbyHospitals = await getNearbyHospitals(patientState, 3);
+            if (!hospitalData && effectiveAbhaId) {
+                hospitalData = await lookupHospitalByABHA(effectiveAbhaId);
+            }
+
+            // Fallback to nearby hospitals if no specific hospital was matched
+            if (!hospitalData) {
+                let stateToSearch = patientState || patient.state || record?.state || '';
+                if (!stateToSearch && effectiveInsuranceId.includes('-')) {
+                    const parts = effectiveInsuranceId.split('-');
+                    const stateCode = parts.length > 1 ? parts[1].toUpperCase() : '';
+                    const STATE_MAP = {
+                        'TN': 'Tamil Nadu', 'DL': 'Delhi', 'TS': 'Telangana',
+                        'KA': 'Karnataka', 'RJ': 'Rajasthan', 'PB': 'Punjab',
+                        'WB': 'West Bengal', 'MH': 'Maharashtra', 'KL': 'Kerala'
+                    };
+                    stateToSearch = STATE_MAP[stateCode] || '';
+                }
+                if (stateToSearch) {
+                    nearbyHospitals = await getNearbyHospitals(stateToSearch, 3);
+                }
+                if (!nearbyHospitals || nearbyHospitals.length === 0) {
+                    nearbyHospitals = await getNearbyHospitals('Tamil Nadu', 3);
+                }
             }
             
             if (currentY + 60 > 270) {
@@ -712,14 +759,19 @@ export async function generatePDF({ patient = {}, result = {}, imagePreview = nu
             pdf.setFontSize(9);
             pdf.setFont(fontFamily, 'bold');
             pdf.setTextColor(192, 0, 0);
-            const warningMsg = result.grade === 4 ? HT.warning4 : HT.warning3;
+            const warningMsg = result.grade === 4 
+                ? HT.warning4 
+                : (result.grade === 3 
+                    ? HT.warning3 
+                    : (result.grade === 2 ? HT.warning2 : HT.warningGeneral));
             pdf.text(warningMsg, PAGE_WIDTH/2, currentY + 7.5, { align: 'center' });
             currentY += 18;
             // Draw hospital info
             const hospitals = hospitalData ? [hospitalData] : nearbyHospitals;
+            const searchIdForLabel = hospitalData?.insurance_id || primarySearchId;
             const sectionLabel = hospitalData
-            ? HT.matched + abhaId + ')'
-            : HT.nearby;
+                ? HT.matched + searchIdForLabel + ')'
+                : HT.nearby;
             pdf.setTextColor(46, 117, 182);
             pdf.setFontSize(9);
             pdf.setFont(fontFamily, 'bold');

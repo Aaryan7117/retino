@@ -160,19 +160,51 @@ function RiskProbabilityMeter({ riskScore, mode }) {
 /**
  * Fulfills SIH26038 Requirement 4: Explainability Module & 30-second doctor validation.
  * Maps detected lesion counts and quadrant locations to A.K. Khurana & ETDRS clinical criteria.
+ * Supports dual-eye (OD + OS) with combined totals, and correctly handles a missing eye as
+ * "Not captured" rather than treating it as zero lesions.
  */
-function ClinicianValidationCard({ arbitration, yolo }) {
-    const arb = arbitration || {};
-    const summary = arb.lesion_summary || {
-        microaneurysms: yolo?.detections?.filter(d => d.class_name?.includes('Microaneurysms')).length || 0,
-        hemorrhages: yolo?.detections?.filter(d => d.class_name?.includes('Hemorrhages')).length || 0,
-        hard_exudates: yolo?.detections?.filter(d => d.class_name?.includes('Exudates')).length || 0,
+function ClinicianValidationCard({ rightArbitration, leftArbitration, rightYolo, leftYolo }) {
+
+    // Helper: count a lesion class from a YOLO detections object
+    const countClass = (yolo, keyword) =>
+        yolo?.detections?.filter(d => d.class_name?.includes(keyword)).length ?? null;
+
+    // Per-eye counts. null = eye not captured (must NOT display as 0)
+    const hasRight = !!(rightArbitration || rightYolo);
+    const hasLeft  = !!(leftArbitration  || leftYolo);
+
+    const od = hasRight ? {
+        ma: rightArbitration?.lesion_summary?.microaneurysms ?? countClass(rightYolo, 'Microaneurysms') ?? 0,
+        hm: rightArbitration?.lesion_summary?.hemorrhages    ?? countClass(rightYolo, 'Hemorrhages')    ?? 0,
+        ex: rightArbitration?.lesion_summary?.hard_exudates  ?? countClass(rightYolo, 'Exudates')       ?? 0,
+        dme: rightArbitration?.has_macular_edema ?? false,
+        rule: rightArbitration?.clinical_rule_applied || null,
+    } : null;
+
+    const os = hasLeft ? {
+        ma: leftArbitration?.lesion_summary?.microaneurysms  ?? countClass(leftYolo, 'Microaneurysms')  ?? 0,
+        hm: leftArbitration?.lesion_summary?.hemorrhages     ?? countClass(leftYolo, 'Hemorrhages')     ?? 0,
+        ex: leftArbitration?.lesion_summary?.hard_exudates   ?? countClass(leftYolo, 'Exudates')        ?? 0,
+        dme: leftArbitration?.has_macular_edema ?? false,
+        rule: leftArbitration?.clinical_rule_applied || null,
+    } : null;
+
+    // Combined totals: only sum eyes that were actually captured
+    const combined = {
+        ma: (od?.ma ?? 0) + (os?.ma ?? 0),
+        hm: (od?.hm ?? 0) + (os?.hm ?? 0),
+        ex: (od?.ex ?? 0) + (os?.ex ?? 0),
+        dme: (od?.dme || os?.dme),
     };
-    const hasDME = arb.has_macular_edema;
-    const rule = arb.clinical_rule_applied || 'ICDR Clinical Consensus';
+
+    // Prefer right-eye rule; fall back to left; fall back to default
+    const rule = od?.rule || os?.rule || 'ICDR Clinical Consensus';
+
+    // Only show combined section when both eyes exist
+    const dualEye = hasRight && hasLeft;
 
     return (
-        <div className="card-elevated border-l-4 border-l-violet-500 bg-[#111827] space-y-5 p-6 md:p-8 shadow-2xl">
+        <div className="card-elevated border-l-4 border-l-violet-500 bg-[#111827] space-y-6 p-6 md:p-8 shadow-2xl">
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5">
                     <span className="w-2.5 h-2.5 rounded-full bg-violet-400 animate-ping"></span>
@@ -195,39 +227,100 @@ function ClinicianValidationCard({ arbitration, yolo }) {
                     <strong className="text-white">Diagnostic Standard Applied:</strong> {rule}
                 </span>
                 <span className="text-[11px] font-mono text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded border border-emerald-500/20">
-                    A.K. Khurana / AIOS Protocol
+                    ETDRS / ICDR Protocol
                 </span>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
-                <div className="p-3.5 rounded-2xl bg-[#0A0F1E] border border-slate-800">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Microaneurysms</p>
-                    <p className="text-xl font-black text-white mt-1">{summary.microaneurysms || 0}</p>
+            {/* Per-eye grids */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                {/* RIGHT EYE (OD) */}
+                <div className="space-y-2">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-blue-400 ml-1">Right Eye / OD</p>
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                        {[['Microaneurysms', od?.ma], ['Hemorrhages', od?.hm], ['Hard Exudates', od?.ex]].map(([lbl, val]) => (
+                            <div key={lbl} className="p-3 rounded-2xl bg-[#0A0F1E] border border-slate-800">
+                                <p className="text-[8px] font-black uppercase tracking-widest text-slate-500 leading-tight">{lbl}</p>
+                                <p className="text-lg font-black text-white mt-1">
+                                    {od ? val : <span className="text-[10px] text-slate-600 font-bold">—</span>}
+                                </p>
+                            </div>
+                        ))}
+                    </div>
+                    {od?.dme && (
+                        <div className="px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/30 text-[10px] text-red-300 font-bold text-center">
+                            ⚠️ Macular Edema Detected (OD)
+                        </div>
+                    )}
+                    {!hasRight && (
+                        <div className="p-3 rounded-2xl bg-[#0A0F1E] border border-dashed border-slate-700 text-center">
+                            <p className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Not captured</p>
+                        </div>
+                    )}
                 </div>
-                <div className="p-3.5 rounded-2xl bg-[#0A0F1E] border border-slate-800">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Hemorrhages</p>
-                    <p className="text-xl font-black text-white mt-1">{summary.hemorrhages || 0}</p>
-                </div>
-                <div className="p-3.5 rounded-2xl bg-[#0A0F1E] border border-slate-800">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Hard Exudates</p>
-                    <p className="text-xl font-black text-white mt-1">{summary.hard_exudates || 0}</p>
-                </div>
-                <div className={`p-3.5 rounded-2xl border ${hasDME ? 'bg-red-500/10 border-red-500/40 shadow-lg shadow-red-500/10' : 'bg-[#0A0F1E] border-slate-800'}`}>
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Macular Edema (CSME)</p>
-                    <p className={`text-xl font-black mt-1 ${hasDME ? 'text-red-400' : 'text-emerald-400'}`}>
-                        {hasDME ? 'DETECTED ⚠️' : 'NONE'}
-                    </p>
+
+                {/* LEFT EYE (OS) */}
+                <div className="space-y-2">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-violet-400 ml-1">Left Eye / OS</p>
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                        {[['Microaneurysms', os?.ma], ['Hemorrhages', os?.hm], ['Hard Exudates', os?.ex]].map(([lbl, val]) => (
+                            <div key={lbl} className="p-3 rounded-2xl bg-[#0A0F1E] border border-slate-800">
+                                <p className="text-[8px] font-black uppercase tracking-widest text-slate-500 leading-tight">{lbl}</p>
+                                <p className="text-lg font-black text-white mt-1">
+                                    {os ? val : <span className="text-[10px] text-slate-600 font-bold">—</span>}
+                                </p>
+                            </div>
+                        ))}
+                    </div>
+                    {os?.dme && (
+                        <div className="px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/30 text-[10px] text-red-300 font-bold text-center">
+                            ⚠️ Macular Edema Detected (OS)
+                        </div>
+                    )}
+                    {!hasLeft && (
+                        <div className="p-3 rounded-2xl bg-[#0A0F1E] border border-dashed border-slate-700 text-center">
+                            <p className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Not captured</p>
+                        </div>
+                    )}
                 </div>
             </div>
 
-            {hasDME && (
+            {/* Combined totals — only shown when both eyes available */}
+            {dualEye && (
+                <div className="pt-2 border-t border-slate-800">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-emerald-400 mb-3 ml-1">Combined Totals (OD + OS)</p>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
+                        {[
+                            ['Microaneurysms', combined.ma],
+                            ['Hemorrhages',    combined.hm],
+                            ['Hard Exudates',  combined.ex],
+                        ].map(([lbl, val]) => (
+                            <div key={lbl} className="p-3.5 rounded-2xl bg-[#0A0F1E] border border-emerald-500/10">
+                                <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">{lbl}</p>
+                                <p className="text-xl font-black text-white mt-1">{val}</p>
+                            </div>
+                        ))}
+                        <div className={`p-3.5 rounded-2xl border ${
+                            combined.dme ? 'bg-red-500/10 border-red-500/40 shadow-lg shadow-red-500/10' : 'bg-[#0A0F1E] border-slate-800'
+                        }`}>
+                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Macular Edema</p>
+                            <p className={`text-xl font-black mt-1 ${combined.dme ? 'text-red-400' : 'text-emerald-400'}`}>
+                                {combined.dme ? 'DETECTED ⚠️' : 'NONE'}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Single eye DME alert (when only one eye, show in combined section) */}
+            {!dualEye && (od?.dme || os?.dme) && (
                 <div className="p-4 rounded-2xl bg-red-950/30 border border-red-500/40 text-xs text-red-200 flex items-start gap-3">
                     <span className="text-lg">⚠️</span>
                     <div>
                         <strong className="text-red-100 uppercase tracking-wide">High-Risk Maculopathy Alert:</strong>
                         <p className="mt-0.5 text-red-300">
-                            Hard exudates detected within 1 Disc Diameter of the fovea center ({arb.fovea_exudate_dist_dd || '&le; 1.0'} DD). 
-                            Threatens central visual acuity regardless of DR grade. Urgent OCT & anti-VEGF referral recommended.
+                            Hard exudates detected within 1 Disc Diameter of the fovea center. 
+                            Threatens central visual acuity. Urgent OCT &amp; anti-VEGF referral recommended.
                         </p>
                     </div>
                 </div>
@@ -403,7 +496,11 @@ export default function ResultsView() {
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4">
                                         <div className="bg-[#0A0F1E]/40 rounded-2xl p-4 border border-[#1F2937]/50">
                                             <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Next Action</p>
-                                            <p className="text-sm font-black text-white mt-1">{info?.urgency}</p>
+                                            <p className="text-sm font-black text-white mt-1">
+                                                {mode === 'preventative' && (activeRecord?.grade ?? 0) >= 1
+                                                    ? '⚡ Preventative Mode: Early referral recommended'
+                                                    : info?.urgency}
+                                            </p>
                                         </div>
                                         <div className="bg-[#0A0F1E]/40 rounded-2xl p-4 border border-[#1F2937]/50">
                                             <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Confidence Score</p>
@@ -484,8 +581,10 @@ export default function ResultsView() {
 
                     {/* 30-Second Clinician Validation Card (SIH26038 Requirement 4) */}
                     <ClinicianValidationCard
-                        arbitration={result?.arbitration || activeRecord?.arbitration || activeRecord?.rightEye?.arbitration}
-                        yolo={result?.yolo || activeRecord?.yolo || activeRecord?.rightEye?.yolo}
+                        rightArbitration={activeRecord?.rightEye?.arbitration || activeRecord?.arbitration}
+                        leftArbitration={activeRecord?.leftEye?.arbitration || null}
+                        rightYolo={activeRecord?.rightEye?.yolo || activeRecord?.yolo}
+                        leftYolo={activeRecord?.leftEye?.yolo || null}
                     />
 
                     {/* Probability Distributions (Common component) */}
@@ -547,7 +646,7 @@ export default function ResultsView() {
                             {/* Actions Stack (5 columns) */}
                             <div className="lg:col-span-5 flex flex-col gap-4">
                                 <PDFGenerator 
-                                    patient={patientData || {}} 
+                                    patient={{ ...activeRecord, ...patientData }} 
                                     result={result} 
                                     imagePreview={imagePreview} 
                                     record={activeRecord} 
@@ -585,7 +684,19 @@ export default function ResultsView() {
 
                                 <ABDMIntegration 
                                     reportId={result?.report_id || `RS-${Date.now()}`} 
+                                    patientId={patientData?.patientId || patientData?.id || activeRecord?.patient_id || activeRecord?.id}
                                     patientName={patientData?.name || activeRecord?.name} 
+                                    onLinked={(linkedAbha) => {
+                                        if (activeRecord) {
+                                            activeRecord.abhaId = linkedAbha;
+                                            activeRecord.abha_id = linkedAbha;
+                                        }
+                                        if (patientData) {
+                                            patientData.abhaId = linkedAbha;
+                                            patientData.abha_id = linkedAbha;
+                                        }
+                                        setRecord(prev => prev ? { ...prev, abhaId: linkedAbha, abha_id: linkedAbha } : prev);
+                                    }}
                                 />
 
                                 <button
