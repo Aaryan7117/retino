@@ -122,7 +122,7 @@ const BASE_NAVIGATION = [
  * AppContent Component: Handles the Auth Gate and Main Layout.
  * Must be wrapped in BrowserRouter.
  */
-function AppContent({ userSession, userProfile, setUserProfile, profileLoading, sessionChecked, waitingServiceWorker, showUpdateToast, setShowUpdateToast }) {
+function AppContent({ userSession, setUserSession, userProfile, setUserProfile, profileLoading, sessionChecked, waitingServiceWorker, showUpdateToast, setShowUpdateToast }) {
   // Use context for screening mode to avoid prop drilling and shadowing
   const { mode: screeningMode, setMode: setScreeningModeAndSave } = useScreeningMode();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -140,7 +140,29 @@ function AppContent({ userSession, userProfile, setUserProfile, profileLoading, 
 
   // Auth Gate
   if (!userSession && !isResetPage) {
-    return <Auth />;
+    return (
+      <Auth 
+        onOfflineLogin={() => {
+          const offlineUser = {
+            id: 'offline-clinician-phc',
+            email: 'field-clinician@rural-phc.gov.in',
+            user_metadata: { role: 'doctor' }
+          };
+          const offlineProfile = {
+            id: 'offline-clinician-phc',
+            full_name: 'Dr. R. Sharma (Medical Officer)',
+            role: 'doctor',
+            phone: '+91 98765 43210',
+            profile_complete: true,
+            offline_mode: true
+          };
+          setUserSession(offlineUser);
+          setUserProfile(offlineProfile);
+          localStorage.setItem('rs_uid', offlineUser.id);
+          localStorage.setItem(`rs_profile_${offlineUser.id}`, JSON.stringify(offlineProfile));
+        }}
+      />
+    );
   }
 
   // Show loading spinner while profile loads
@@ -491,6 +513,14 @@ export default function App() {
            setSessionChecked(true);
          });
       } else {
+         const cachedUid = localStorage.getItem('rs_uid');
+         if (cachedUid === 'offline-clinician-phc') {
+           const cached = localStorage.getItem(`rs_profile_${cachedUid}`);
+           if (cached) {
+             setUserSession({ id: cachedUid, email: 'field-clinician@rural-phc.gov.in', user_metadata: { role: 'doctor' } });
+             setUserProfile(JSON.parse(cached));
+           }
+         }
          setSessionChecked(true);
          setProfileLoading(false);
       }
@@ -507,9 +537,12 @@ export default function App() {
          setUserSession(session.user);
          localStorage.setItem('rs_uid', session.user.id);
       } else {
-         setUserSession(null);
-         localStorage.removeItem('rs_uid');
-         setUserProfile(null);
+         const cachedUid = localStorage.getItem('rs_uid');
+         if (cachedUid !== 'offline-clinician-phc') {
+           setUserSession(null);
+           localStorage.removeItem('rs_uid');
+           setUserProfile(null);
+         }
          setProfileLoading(false);
       }
     });
@@ -545,6 +578,7 @@ export default function App() {
       <BrowserRouter>
         <AppContent 
           userSession={userSession}
+          setUserSession={setUserSession}
           userProfile={userProfile}
           setUserProfile={setUserProfile}
           profileLoading={profileLoading}
