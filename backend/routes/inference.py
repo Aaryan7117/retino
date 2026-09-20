@@ -115,13 +115,13 @@ def run_grading(image_rgb: np.ndarray) -> dict:
     probs = exp / exp.sum()
     grade = int(np.argmax(probs))
 
-    # Standardized clinical management timelines from A.K. Khurana (Comprehensive Ophthalmology p. 262)
+    # Standardized clinical management timelines from A.K. Khurana (Comprehensive Ophthalmology Table 13.5)
     MAP = [
         {'grade_label': 'No Diabetic Retinopathy',        'risk_level': 'LOW',    'risk_score': 10, 'urgency': 'Routine annual screening at PHC', 'icdr_level': 'Level 0: No apparent retinopathy'},
-        {'grade_label': 'Mild Diabetic Retinopathy',       'risk_level': 'LOW',    'risk_score': 28, 'urgency': 'Annual review; strict glycemic control', 'icdr_level': 'Level 1: Microaneurysms only'},
+        {'grade_label': 'Mild Diabetic Retinopathy',       'risk_level': 'LOW',    'risk_score': 28, 'urgency': 'Annual review; tight glycemic control (HbA1c < 7%)', 'icdr_level': 'Level 1: Microaneurysms only'},
         {'grade_label': 'Moderate Diabetic Retinopathy',   'risk_level': 'MEDIUM', 'risk_score': 55, 'urgency': 'Referral to ophthalmologist within 6 months', 'icdr_level': 'Level 2: Moderate intraretinal lesions'},
-        {'grade_label': 'Severe Diabetic Retinopathy',     'risk_level': 'HIGH',   'risk_score': 85, 'urgency': 'Urgent referral within 3 months (high risk of PDR)', 'icdr_level': 'Level 3: ETDRS 4-2-1 Rule satisfied'},
-        {'grade_label': 'Proliferative Diabetic Retinopathy', 'risk_level': 'HIGH', 'risk_score': 98, 'urgency': 'Emergency referral for PRP Laser / Anti-VEGF', 'icdr_level': 'Level 4: Neovascularization / Vitreous Hemorrhage'},
+        {'grade_label': 'Severe Diabetic Retinopathy',     'risk_level': 'HIGH',   'risk_score': 85, 'urgency': 'Specialist referral within 3 months (high risk of PDR)', 'icdr_level': 'Level 3: ETDRS 4-2-1 Rule satisfied'},
+        {'grade_label': 'Proliferative Diabetic Retinopathy', 'risk_level': 'HIGH', 'risk_score': 98, 'urgency': 'Emergency tertiary referral for PRP Laser / Anti-VEGF', 'icdr_level': 'Level 4: Neovascularization / Vitreous Hemorrhage'},
     ]
     return {
         'grade': grade,
@@ -314,7 +314,7 @@ async def run_inference(
     # If CSME detected, escalate urgency note
     urgency_text = result['urgency']
     if arbitration['has_macular_edema']:
-        urgency_text = "URGENT: Clinically Significant Macular Edema (CSME) detected within 1 DD of fovea."
+        urgency_text = "Immediate referral for OCT & anti-VEGF injection (CSME detected within 1 DD of fovea)"
 
     # 7. Pack response
     response = {
