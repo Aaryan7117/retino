@@ -99,8 +99,8 @@ print(f"\n[1/3] Generated YOLO Dataset Configuration: {yaml_path}")
 # ─── 3. PRODUCTION TRAINING SPECIFICATION & EXPORT GUIDE ─────────────────────
 
 print("\n[2/3] YOLO Training Workflow:")
-print("  • Command for Ultralytics / YOLO26n Training:")
-print("    yolo detect train data=data/yolo_lesions/retina_lesions.yaml model=yolo26n.pt epochs=50 imgsz=1024 batch=4")
+print("  • Command for Ultralytics YOLOv8 Training:")
+print("    yolo detect train data=data/yolo_lesions/retina_lesions.yaml model=yolov8n.pt epochs=50 imgsz=1024 batch=4")
 print("  • Export to ONNX:")
 print("    yolo export model=runs/detect/train/weights/best.pt format=onnx imgsz=1024 simplify=True")
 print("  • Apply Dynamic INT8 Quantization:")
