@@ -105,24 +105,74 @@ function fastBoxBlur(src, w, h, radius) {
 }
 
 /**
- * Extracts high-frequency microvascular pathology anomalies from the green channel.
- * (Equivalent to OpenCV backend CLAHE & Gaussian background subtraction).
+ * Detects the anatomical Optic Disc (brightest circular physiological region)
+ * and returns a soft radial attenuation mask so normal optic nerve heads are NOT flagged as lesions.
  */
-function extractGreenChannelSaliency(imageData) {
+function getOpticDiscAttenuation(imageData) {
+    const { width: iW, height: iH, data: D } = imageData;
+    const red = new Float32Array(iW * iH);
+    for (let i = 0; i < iW * iH; i++) {
+        red[i] = D[i * 4]; // Red channel has highest optic disc luminescence
+    }
+
+    const blurR = Math.max(12, Math.round(Math.min(iW, iH) * 0.08));
+    const blurredRed = fastBoxBlur(red, iW, iH, blurR);
+
+    // Locate peak within inner 85% to avoid peripheral rim glare
+    let maxVal = -Infinity, odIdx = 0;
+    const marginX = Math.round(iW * 0.08);
+    const marginY = Math.round(iH * 0.08);
+    for (let y = marginY; y < iH - marginY; y++) {
+        const yOff = y * iW;
+        for (let x = marginX; x < iW - marginX; x++) {
+            const val = blurredRed[yOff + x];
+            if (val > maxVal) {
+                maxVal = val;
+                odIdx = yOff + x;
+            }
+        }
+    }
+
+    const odX = odIdx % iW;
+    const odY = Math.floor(odIdx / iW);
+    const odR = Math.max(16, Math.round(Math.min(iW, iH) * 0.12));
+    const odR2 = odR * odR;
+
+    const odAtten = new Float32Array(iW * iH);
+    for (let y = 0; y < iH; y++) {
+        const dy2 = (y - odY) * (y - odY);
+        const yOff = y * iW;
+        for (let x = 0; x < iW; x++) {
+            const d2 = (x - odX) * (x - odX) + dy2;
+            if (d2 < odR2) {
+                const ratio = Math.sqrt(d2) / odR;
+                odAtten[yOff + x] = 0.05 + 0.95 * (ratio * ratio);
+            } else {
+                odAtten[yOff + x] = 1.0;
+            }
+        }
+    }
+    return odAtten;
+}
+
+/**
+ * Extracts high-frequency microvascular pathology anomalies from the green channel,
+ * with optic disc attenuation to prevent false positives on the normal nerve head.
+ */
+function extractGreenChannelSaliency(imageData, odAtten) {
     const { width: iW, height: iH, data: D } = imageData;
     const green = new Float32Array(iW * iH);
     for (let i = 0; i < iW * iH; i++) {
         green[i] = D[i * 4 + 1]; // Green channel has maximal retinal lesion contrast
     }
 
-    // Approximate smooth retinal background
-    const bg = fastBoxBlur(green, iW, iH, 14);
+    const bg = fastBoxBlur(green, iW, iH, 16);
 
     const saliency = new Float32Array(iW * iH);
     let sMax = 0;
     for (let i = 0; i < iW * iH; i++) {
-        const diff = Math.abs(green[i] - bg[i]);
-        const val = diff > 12 ? diff - 12 : 0;
+        const diff = Math.abs(green[i] - bg[i]) * odAtten[i];
+        const val = diff > 10 ? diff - 10 : 0;
         saliency[i] = val;
         if (val > sMax) sMax = val;
     }
@@ -203,63 +253,73 @@ function bilinearUpsample(m7, FH, FW, iW, iH) {
 
 /**
  * Generates genuine clinical Grad-CAM / CAM evidence heatmap.
- * Fuses true Neural Network CAM with high-frequency green channel anomaly saliency
- * and YOLO lesion detections. Completely replaces the legacy Sobel edge fallback.
+ * - Suppresses normal optic nerve head so it doesn't falsely flare red
+ * - Uses smooth radial Gaussian splats for YOLO lesions (NO BLOCKY SQUARE TILES!)
+ * - Uses adaptive alpha blending (NO PURPLE RETINA: healthy tissue stays 100% natural!)
  */
 async function generateGenuineClinicalHeatmap(imageData, featureMapData, predClass, detections = []) {
     const { width: iW, height: iH } = imageData;
     const FH = 7, FW = 7;
 
-    // 1. Compute True Neural Network CAM
+    // 1. Optic Disc Attenuation
+    const odAtten = getOpticDiscAttenuation(imageData);
+
+    // 2. Compute True Neural Network CAM
     let camUp;
     if (featureMapData && featureMapData.length >= 1536 * FH * FW) {
         const cam7x7 = computeTrueCAM(featureMapData, predClass, FH, FW);
-        camUp = bilinearUpsample(cam7x7, FH, FW, iW, iH);
+        const rawUp = bilinearUpsample(cam7x7, FH, FW, iW, iH);
+        camUp = fastBoxBlur(rawUp, iW, iH, 6);
+        for (let i = 0; i < iW * iH; i++) camUp[i] *= odAtten[i];
     } else {
         camUp = new Float32Array(iW * iH).fill(0);
     }
 
-    // 2. Compute Retinal Green-Channel Lesion Contrast
-    const greenSaliency = extractGreenChannelSaliency(imageData);
+    // 3. Compute Retinal Green-Channel Lesion Contrast (with Optic Disc suppression)
+    const greenSaliency = extractGreenChannelSaliency(imageData, odAtten);
 
-    // 3. Build YOLO Lesion Attention Mask (if detections exist)
-    const yoloMask = new Float32Array(iW * iH).fill(0);
+    // 4. Smooth Radial Gaussian Splats for YOLO detections (NO SQUARE BLOCKS!)
+    const yoloSaliency = new Float32Array(iW * iH).fill(0);
     if (detections && detections.length > 0) {
         detections.forEach(det => {
-            const [x1, y1, x2, y2] = det.bbox.map(Math.round);
-            const startX = Math.max(0, Math.min(iW - 1, x1));
-            const endX   = Math.max(0, Math.min(iW - 1, x2));
-            const startY = Math.max(0, Math.min(iH - 1, y1));
-            const endY   = Math.max(0, Math.min(iH - 1, y2));
-            for (let y = startY; y <= endY; y++) {
+            const [x1, y1, x2, y2] = det.bbox;
+            const cx = (x1 + x2) / 2;
+            const cy = (y1 + y2) / 2;
+            const r = Math.max(Math.abs(x2 - x1), Math.abs(y2 - y1)) / 2;
+            const sigma = Math.max(r, 8);
+            const sigma2 = 2 * sigma * sigma;
+            const cutoff = Math.round(3 * sigma);
+
+            const minX = Math.max(0, Math.floor(cx - cutoff));
+            const maxX = Math.min(iW - 1, Math.ceil(cx + cutoff));
+            const minY = Math.max(0, Math.floor(cy - cutoff));
+            const maxY = Math.min(iH - 1, Math.ceil(cy + cutoff));
+
+            for (let y = minY; y <= maxY; y++) {
+                const dy2 = (y - cy) * (y - cy);
                 const yOff = y * iW;
-                for (let x = startX; x <= endX; x++) {
-                    yoloMask[yOff + x] = 1.0;
+                for (let x = minX; x <= maxX; x++) {
+                    const d2 = (x - cx) * (x - cx) + dy2;
+                    const g = Math.exp(-d2 / sigma2);
+                    if (g > yoloSaliency[yOff + x]) {
+                        yoloSaliency[yOff + x] = g;
+                    }
                 }
             }
         });
     }
 
-    // 4. Multi-Modal Fusion
+    // 5. Multi-Modal Fusion (Smooth, continuous gradient)
     const fused = new Float32Array(iW * iH);
     for (let i = 0; i < iW * iH; i++) {
-        let val = 0.55 * camUp[i] + 0.45 * greenSaliency[i];
-        if (yoloMask[i] > 0) {
-            val = Math.min(1.0, val + 0.35); // Boost confirmed lesion locations
-        }
-        fused[i] = val;
+        let val = 0.50 * camUp[i] + 0.40 * greenSaliency[i] + 0.40 * yoloSaliency[i];
+        fused[i] = Math.min(1.0, val);
     }
+    const smoothFused = fastBoxBlur(fused, iW, iH, 4);
 
-    // Standard OpenCV / MATLAB JET colormap
-    function jet(t) {
-        return [
-            Math.round(Math.min(1, Math.max(0, 1.5 - Math.abs(4 * t - 3))) * 255),
-            Math.round(Math.min(1, Math.max(0, 1.5 - Math.abs(4 * t - 2))) * 255),
-            Math.round(Math.min(1, Math.max(0, 1.5 - Math.abs(4 * t - 1))) * 255),
-        ];
-    }
-
-    // 5. Alpha blend with original scan (65% original scan + 35% JET overlay)
+    // 6. Professional Clinical Alpha Composition
+    // Normal retina (t <= 0.16) is 100% untouched original fundus (ZERO PURPLE!)
+    // Lesion areas (t > 0.16) smoothly ramp up to 70% warm amber/crimson heat glow
     const canvas = new OffscreenCanvas(iW, iH);
     const ctx = canvas.getContext('2d');
     ctx.putImageData(imageData, 0, 0);
@@ -267,17 +327,49 @@ async function generateGenuineClinicalHeatmap(imageData, featureMapData, predCla
     const out = new Uint8ClampedArray(orig.data.length);
 
     for (let i = 0; i < iW * iH; i++) {
-        const t = fused[i];
-        const [hr, hg, hb] = jet(t);
+        const t = smoothFused[i];
         const idx = i * 4;
-        out[idx]     = Math.round(orig.data[idx]     * 0.65 + hr * 0.35);
-        out[idx + 1] = Math.round(orig.data[idx + 1] * 0.65 + hg * 0.35);
-        out[idx + 2] = Math.round(orig.data[idx + 2] * 0.65 + hb * 0.35);
+
+        if (t <= 0.16) {
+            out[idx]     = orig.data[idx];
+            out[idx + 1] = orig.data[idx + 1];
+            out[idx + 2] = orig.data[idx + 2];
+            out[idx + 3] = 255;
+            continue;
+        }
+
+        const alpha = Math.min(0.70, ((t - 0.16) / 0.84) * 0.70);
+
+        // Clinical Thermal Scale:
+        // 0.16 - 0.45: Warm Golden Lime
+        // 0.45 - 0.75: Radiant Amber Orange
+        // 0.75 - 1.00: Deep Crimson Red
+        let hr = 255, hg = 0, hb = 0;
+        if (t < 0.45) {
+            const frac = (t - 0.16) / (0.45 - 0.16);
+            hr = Math.round(180 + 75 * frac);
+            hg = Math.round(210 + 40 * frac);
+            hb = Math.round(40 * (1 - frac));
+        } else if (t < 0.75) {
+            const frac = (t - 0.45) / (0.75 - 0.45);
+            hr = 255;
+            hg = Math.round(220 * (1 - frac * 0.65));
+            hb = 0;
+        } else {
+            const frac = (t - 0.75) / (1.0 - 0.75);
+            hr = Math.round(240 + 15 * frac);
+            hg = Math.round(75 * (1 - frac));
+            hb = Math.round(10 * frac);
+        }
+
+        out[idx]     = Math.round(orig.data[idx]     * (1 - alpha) + hr * alpha);
+        out[idx + 1] = Math.round(orig.data[idx + 1] * (1 - alpha) + hg * alpha);
+        out[idx + 2] = Math.round(orig.data[idx + 2] * (1 - alpha) + hb * alpha);
         out[idx + 3] = 255;
     }
 
     ctx.putImageData(new ImageData(out, iW, iH), 0, 0);
-    return canvas.convertToBlob({ type: 'image/jpeg', quality: 0.90 });
+    return canvas.convertToBlob({ type: 'image/jpeg', quality: 0.92 });
 }
 
 // ─── Core Logic ─────────────────────────────────────────────────────────────
