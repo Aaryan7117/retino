@@ -11,7 +11,7 @@ const FORM_FIELDS = [
     { id: 'age', label: 'Age (years)', type: 'number', col: 1 },
     { id: 'diabeticSince', label: 'Diabetic Since (yrs)', type: 'number', col: 1 },
     { id: 'contact', label: 'Mobile Number', type: 'tel', col: 2 },
-    { id: 'abhaId', label: 'ABHA Insurance ID (optional)', type: 'text', col: 2 },
+    { id: 'abdmInsuranceId', label: 'ABDM Insurance ID (optional)', type: 'text', col: 2 },
 ];
 
 /**
@@ -114,7 +114,7 @@ export default function Scanner() {
 
     const [patientData, setPatientData] = useState(() => {
         const saved = sessionStorage.getItem('retinascan_patient_draft');
-        return saved ? JSON.parse(saved) : { name: '', age: '', gender: 'Male', diabeticSince: '', contact: '', abhaId: '' };
+        return saved ? JSON.parse(saved) : { name: '', age: '', gender: 'Male', diabeticSince: '', contact: '', abhaId: '', abdmInsuranceId: '' };
     });
 
     // Save/Restore image previews to/from session storage (PWA persistence)
@@ -237,7 +237,12 @@ export default function Scanner() {
                     heatmap_url: rightFinalHeatmap,
                     raw_heatmap_url: rightHeatB64 || rightInferenceResult.heatmapUrl || rightInferenceResult.heatmap_url,
                     image_url: rightImgB64 || rightEye.preview,
+                    // 'yolo' key is read by ClinicianValidationCard in ResultsView for ICDR lesion counts.
+                    // 'yoloDetections' key is kept for backwards compat (generateCombinedHeatmap etc.).
+                    yolo: rightInferenceResult.yoloDetections || rightInferenceResult.yolo || null,
                     yoloDetections: rightInferenceResult.yoloDetections || rightInferenceResult.yolo || null,
+                    // Store arbitration so ClinicianValidationCard can read per-eye lesion summaries
+                    arbitration: rightInferenceResult.arbitration || null,
                     imageQuality: rightInferenceResult.imageQuality || 'Sufficient Image Quality',
                 },
                 leftEye: leftInferenceResult ? {
@@ -249,7 +254,9 @@ export default function Scanner() {
                     heatmap_url: leftFinalHeatmap,
                     raw_heatmap_url: leftHeatB64 || leftInferenceResult.heatmapUrl || leftInferenceResult.heatmap_url,
                     image_url: leftImgB64 || leftEye.preview,
+                    yolo: leftInferenceResult.yoloDetections || leftInferenceResult.yolo || null,
                     yoloDetections: leftInferenceResult.yoloDetections || leftInferenceResult.yolo || null,
+                    arbitration: leftInferenceResult.arbitration || null,
                     imageQuality: leftInferenceResult.imageQuality || 'Sufficient Image Quality',
                 } : null,
             };

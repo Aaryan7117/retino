@@ -41,6 +41,54 @@ async function analyzeViaBackend(imageFile, onProgress) {
         const yoloResult = await runYoloLocally(imageFile, onProgress);
         baseResult.yolo = yoloResult;
         baseResult.yoloDetections = yoloResult;
+
+        // Compute clinical arbitration from the YOLO detections so ClinicianValidationCard
+        // always has lesion_summary data, regardless of whether inference ran backend or offline.
+        const detections = yoloResult?.detections || [];
+        let totalMA = 0, totalHM = 0, totalEX = 0;
+        let minFoveaDistDD = Infinity;
+        const foveaX = 0.5, foveaY = 0.5; // normalized center estimate
+        const discDiameter = 0.15;         // ~15% of image width
+        const quadrantCounts = { 'Superior-Temporal': 0, 'Superior-Nasal': 0, 'Inferior-Nasal': 0, 'Inferior-Temporal': 0 };
+
+        detections.forEach(det => {
+            const [x1, y1, x2, y2] = det.bbox;
+            const cx = (x1 + x2) / 2;
+            const cy = (y1 + y2) / 2;
+            if (det.class_name?.includes('Hemorrhages')) { totalHM++; }
+            else if (det.class_name?.includes('Microaneurysms')) { totalMA++; }
+            else if (det.class_name?.includes('Exudates')) {
+                totalEX++;
+                const distDD = Math.sqrt((cx - foveaX) ** 2 + (cy - foveaY) ** 2) / discDiameter;
+                if (distDD < minFoveaDistDD) minFoveaDistDD = distDD;
+            }
+        });
+
+        const hasMacularEdema = totalEX > 0 && minFoveaDistDD <= 1.0;
+        const etdrs421Met = Object.values(quadrantCounts).every(c => c >= 20);
+        let clinicalRuleApplied = 'ICDR Softmax Consensus';
+        let backendGrade = responseData.grade ?? 0;
+        if (etdrs421Met && backendGrade < 3) {
+            backendGrade = 3;
+            clinicalRuleApplied = 'ETDRS 4-2-1 Rule: ≥20 hemorrhages in all 4 quadrants (Severe NPDR)';
+        } else if (backendGrade === 0 && (totalMA > 0 || totalHM > 0)) {
+            clinicalRuleApplied = 'ICDR Rule: Focal lesions detected in early scan (Mild NPDR)';
+        }
+
+        baseResult.arbitration = {
+            final_grade: backendGrade,
+            is_referable: (backendGrade >= 2) || hasMacularEdema,
+            has_macular_edema: hasMacularEdema,
+            fovea_exudate_dist_dd: totalEX > 0 ? parseFloat(minFoveaDistDD.toFixed(2)) : null,
+            clinical_rule_applied: clinicalRuleApplied,
+            lesion_summary: {
+                microaneurysms: totalMA,
+                hemorrhages:    totalHM,
+                hard_exudates:  totalEX,
+                quadrant_distribution: quadrantCounts,
+            },
+        };
+
         onProgress('Lesion mapping complete ✅');
     } catch (yoloErr) {
         console.warn('[YOLO local] Failed, continuing without detections:', yoloErr.message);
