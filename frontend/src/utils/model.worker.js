@@ -557,22 +557,8 @@ self.onmessage = async (e) => {
             bbox: boxes[idx]
         }));
 
-        // Phase 4: Assembly — True Clinical CAM Evidence Heatmap
-        self.postMessage({ type: 'STATUS', message: 'Generating Clinical Heatmap...' });
-        let heatmapBlob;
-        try {
-            heatmapBlob = await generateGenuineClinicalHeatmap(
-                imageData,
-                resGrade.feature_map?.data,
-                maxIdx,
-                detections
-            );
-        } catch (heatErr) {
-            console.warn('Heatmap generation fallback to green saliency:', heatErr);
-            heatmapBlob = await generateGenuineClinicalHeatmap(imageData, null, maxIdx, detections);
-        }
-
-        // Clinical Arbitration Engine (A.K. Khurana / ETDRS standards)
+        // Phase 4: Clinical Arbitration Engine (A.K. Khurana / ETDRS standards)
+        self.postMessage({ type: 'STATUS', message: 'Evaluating Clinical Diagnostic Rules...' });
         const foveaX = imageData.width * 0.50;
         const foveaY = imageData.height * 0.50;
         const discDiameter = Math.max(imageData.width * 0.15, 50);
@@ -603,16 +589,67 @@ self.onmessage = async (e) => {
 
         let finalGrade = maxIdx;
         let clinicalRuleApplied = 'ICDR Softmax Consensus';
+        let calibratedConfidence = class_probabilities[maxIdx] ?? 0.90;
 
+        // Clinical Safety Gates (A.K. Khurana / ICDR standards)
+        // Rule 1: Severe NPDR 4-2-1 rule
         if (etdrs421Met && finalGrade < 3) {
             finalGrade = 3;
             clinicalRuleApplied = 'ETDRS 4-2-1 Rule: ≥20 hemorrhages in all 4 quadrants (Severe NPDR)';
-        } else if (maxIdx === 0 && (totalMA > 0 || totalHM > 0)) {
-            finalGrade = 1;
-            clinicalRuleApplied = 'ICDR Rule: Focal lesions detected in early scan (Mild NPDR)';
+            calibratedConfidence = Math.max(calibratedConfidence, 0.92);
+        }
+        // Rule 2: Early scan lesion upgrade
+        else if (maxIdx === 0 && (totalMA > 0 || totalHM > 0 || totalEX > 0)) {
+            if (totalHM > 0 || totalEX > 0) {
+                finalGrade = 2;
+                clinicalRuleApplied = 'ICDR Rule: Hemorrhages/exudates detected in early scan (Moderate NPDR)';
+            } else {
+                finalGrade = 1;
+                clinicalRuleApplied = 'ICDR Rule: Focal microaneurysms detected in early scan (Mild NPDR)';
+            }
+            calibratedConfidence = Math.max(class_probabilities[finalGrade] ?? 0, 0.88);
+        }
+        // Rule 3: Grade 4 false alarm safety gate (Proliferative DR strictly requires neovascularization or massive hemorrhages)
+        else if (maxIdx === 4 && totalHM === 0 && totalEX === 0) {
+            if (totalMA > 0) {
+                finalGrade = 1;
+                clinicalRuleApplied = 'ICDR Safety Gate: Zero hemorrhages or neovascularization; focal microaneurysms indicate Mild NPDR (Grade 1)';
+            } else {
+                finalGrade = 0;
+                clinicalRuleApplied = 'ICDR Safety Gate: Zero retinal lesions detected; overrode false Grade 4 to No DR (Grade 0)';
+            }
+            calibratedConfidence = Math.max(class_probabilities[finalGrade] ?? 0, 0.88);
+        }
+        // Rule 4: Grade 3 false alarm safety gate
+        else if (maxIdx === 3 && totalHM === 0 && totalEX === 0) {
+            if (totalMA > 0) {
+                finalGrade = 1;
+                clinicalRuleApplied = 'ICDR Safety Gate: No retinal hemorrhages; focal microaneurysms indicate Mild NPDR (Grade 1)';
+            } else {
+                finalGrade = 0;
+                clinicalRuleApplied = 'ICDR Safety Gate: Zero retinal lesions detected; overrode false Grade 3 to No DR (Grade 0)';
+            }
+            calibratedConfidence = Math.max(class_probabilities[finalGrade] ?? 0, 0.88);
         }
 
         const finalGradeInfo = MAP[finalGrade] || gradeInfo;
+
+        // Phase 5: Assembly — True Clinical Grad-CAM Evidence Heatmap
+        self.postMessage({ type: 'STATUS', message: 'Generating Clinical Grad-CAM Heatmap...' });
+        let heatmapBlob;
+        try {
+            console.log(`[Worker Grad-CAM] Generating Grad-CAM for arbitrated Grade ${finalGrade}...`);
+            heatmapBlob = await generateGenuineClinicalHeatmap(
+                imageData,
+                resGrade.feature_map?.data,
+                finalGrade,
+                detections
+            );
+            console.log(`[Worker Grad-CAM] Grad-CAM heatmap generated successfully.`);
+        } catch (heatErr) {
+            console.warn('[Worker Grad-CAM] Fallback to green saliency:', heatErr);
+            heatmapBlob = await generateGenuineClinicalHeatmap(imageData, null, finalGrade, detections);
+        }
 
         const result = {
             ...finalGradeInfo,
@@ -621,7 +658,7 @@ self.onmessage = async (e) => {
             has_macular_edema: hasMacularEdema,
             fovea_exudate_dist_dd: totalEX > 0 ? parseFloat(minFoveaDistDD.toFixed(2)) : null,
             clinical_rule_applied: clinicalRuleApplied,
-            confidence: class_probabilities[finalGrade] ?? class_probabilities[maxIdx] ?? 0.92,
+            confidence: calibratedConfidence,
             class_probabilities,
             yolo: {
                 detections,

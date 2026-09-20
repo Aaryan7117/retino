@@ -27,9 +27,32 @@ export default function SplitHeatmapView({ originalUrl, heatmapUrl }) {
   }, [dragging, move]);
 
   return (
-    <div className='space-y-1'>
-      <div className='flex justify-between text-xs text-slate-500 font-bold'>
-        <span>Original</span><span>Drag to compare</span><span>AI Heatmap</span>
+    <div className='space-y-2'>
+      <div className='flex items-center justify-between'>
+        <span className='text-xs text-slate-400 font-bold'>Heatmap Comparator</span>
+        <div className='flex items-center gap-1 bg-[#0A0F1E] p-1 rounded-xl border border-slate-800 text-[10px] font-bold'>
+          <button
+            type='button'
+            onClick={(e) => { e.stopPropagation(); setPos(100); }}
+            className={`px-2.5 py-1 rounded-lg transition-all ${pos >= 90 ? 'bg-slate-700 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+          >
+            Original
+          </button>
+          <button
+            type='button'
+            onClick={(e) => { e.stopPropagation(); setPos(50); }}
+            className={`px-2.5 py-1 rounded-lg transition-all ${pos > 10 && pos < 90 ? 'bg-violet-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+          >
+            Split 50/50
+          </button>
+          <button
+            type='button'
+            onClick={(e) => { e.stopPropagation(); setPos(0); }}
+            className={`px-2.5 py-1 rounded-lg transition-all ${pos <= 10 ? 'bg-teal-500 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+          >
+            AI Heatmap
+          </button>
+        </div>
       </div>
       <div
         ref={containerRef}

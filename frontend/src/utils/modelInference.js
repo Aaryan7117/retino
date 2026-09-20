@@ -71,8 +71,30 @@ async function analyzeViaBackend(imageFile, onProgress) {
         if (etdrs421Met && backendGrade < 3) {
             backendGrade = 3;
             clinicalRuleApplied = 'ETDRS 4-2-1 Rule: ≥20 hemorrhages in all 4 quadrants (Severe NPDR)';
-        } else if (backendGrade === 0 && (totalMA > 0 || totalHM > 0)) {
-            clinicalRuleApplied = 'ICDR Rule: Focal lesions detected in early scan (Mild NPDR)';
+        } else if (backendGrade === 0 && (totalMA > 0 || totalHM > 0 || totalEX > 0)) {
+            if (totalHM > 0 || totalEX > 0) {
+                backendGrade = 2;
+                clinicalRuleApplied = 'ICDR Rule: Hemorrhages/exudates detected in early scan (Moderate NPDR)';
+            } else {
+                backendGrade = 1;
+                clinicalRuleApplied = 'ICDR Rule: Focal microaneurysms detected in early scan (Mild NPDR)';
+            }
+        } else if (backendGrade === 4 && totalHM === 0 && totalEX === 0) {
+            if (totalMA > 0) {
+                backendGrade = 1;
+                clinicalRuleApplied = 'ICDR Safety Gate: Zero hemorrhages or neovascularization; focal microaneurysms indicate Mild NPDR (Grade 1)';
+            } else {
+                backendGrade = 0;
+                clinicalRuleApplied = 'ICDR Safety Gate: Zero retinal lesions detected; overrode false Grade 4 to No DR (Grade 0)';
+            }
+        } else if (backendGrade === 3 && totalHM === 0 && totalEX === 0) {
+            if (totalMA > 0) {
+                backendGrade = 1;
+                clinicalRuleApplied = 'ICDR Safety Gate: No retinal hemorrhages; focal microaneurysms indicate Mild NPDR (Grade 1)';
+            } else {
+                backendGrade = 0;
+                clinicalRuleApplied = 'ICDR Safety Gate: Zero retinal lesions detected; overrode false Grade 3 to No DR (Grade 0)';
+            }
         }
 
         baseResult.arbitration = {
@@ -194,8 +216,20 @@ export const analyzeImage = async (imageFile, onProgress) => {
                     if (validationResult.warnings?.length > 0)
                         validationResult.warnings.forEach(w => onProgress('⚠ ' + w));
 
-                    const { tensorData, blurScore, imageData } = preprocessImageForONNX(img);
+                    const { tensorData, blurScore } = preprocessImageForONNX(img);
                     if (blurScore < 20) onProgress('⚠ Blurry image detected — results may be less accurate.');
+
+                    // Prepare crisp, aspect-ratio-preserving ImageData for high-precision YOLO & Grad-CAM
+                    const maxDim = 1024;
+                    const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+                    const fullW = Math.round(img.width * scale);
+                    const fullH = Math.round(img.height * scale);
+                    const fullCanvas = document.createElement('canvas');
+                    fullCanvas.width = fullW;
+                    fullCanvas.height = fullH;
+                    const fullCtx = fullCanvas.getContext('2d');
+                    fullCtx.drawImage(img, 0, 0, fullW, fullH);
+                    const fullImageData = fullCtx.getImageData(0, 0, fullW, fullH);
 
                     const inferenceWorker = new Worker(new URL('./model.worker.js', import.meta.url), { type: 'module' });
 
@@ -230,7 +264,7 @@ export const analyzeImage = async (imageFile, onProgress) => {
                     inferenceWorker.postMessage({
                         type: 'INFERENCE',
                         tensorData: tensorData,
-                        imageData: imageData,
+                        imageData: fullImageData,
                         filename: imageFile.name
                     }, [tensorData.buffer]);
                 } catch (err) {

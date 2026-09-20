@@ -267,12 +267,31 @@ def clinical_arbitration_engine(
     final_grade = nn_grade
     rule_applied = "ICDR Softmax Consensus"
 
+    # Clinical Safety Gates (A.K. Khurana / ICDR standards)
     if etdrs_4_2_1_met and final_grade < 3:
         final_grade = 3
         rule_applied = "ETDRS 4-2-1 Rule Applied: ≥20 hemorrhages across all 4 quadrants (Severe NPDR)"
-    elif nn_grade == 0 and (total_ma > 0 or total_hm > 0):
-        final_grade = 1
-        rule_applied = "ICDR Microaneurysm Rule: Focal lesions detected in early scan (Mild NPDR)"
+    elif nn_grade == 0 and (total_ma > 0 or total_hm > 0 or total_ex > 0):
+        if total_hm > 0 or total_ex > 0:
+            final_grade = 2
+            rule_applied = "ICDR Rule: Hemorrhages/exudates detected in early scan (Moderate NPDR)"
+        else:
+            final_grade = 1
+            rule_applied = "ICDR Microaneurysm Rule: Focal microaneurysms detected in early scan (Mild NPDR)"
+    elif nn_grade == 4 and total_hm == 0 and total_ex == 0:
+        if total_ma > 0:
+            final_grade = 1
+            rule_applied = "ICDR Safety Gate: Zero hemorrhages or neovascularization; focal microaneurysms indicate Mild NPDR (Grade 1)"
+        else:
+            final_grade = 0
+            rule_applied = "ICDR Safety Gate: Zero retinal lesions detected; overrode false Grade 4 to No DR (Grade 0)"
+    elif nn_grade == 3 and total_hm == 0 and total_ex == 0:
+        if total_ma > 0:
+            final_grade = 1
+            rule_applied = "ICDR Safety Gate: No retinal hemorrhages; focal microaneurysms indicate Mild NPDR (Grade 1)"
+        else:
+            final_grade = 0
+            rule_applied = "ICDR Safety Gate: Zero retinal lesions detected; overrode false Grade 3 to No DR (Grade 0)"
 
     is_referable = (final_grade >= 2) or has_macular_edema
 
