@@ -9,7 +9,7 @@ import { supabase } from "../utils/supabaseClient"
  * Provides a unified interface for medical professionals to sign in or create an account.
  * Features include password visibility toggle, error handling, and responsive split-panel design.
  */
-export default function Auth() {
+export default function Auth({ onOfflineLogin }) {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [mode, setMode] = useState("login") // 'login' | 'signup' | 'reset'
@@ -245,6 +245,26 @@ export default function Auth() {
                       isLoginMode ? "Access Portal →" : "Register Access →"
                     )}
                   </button>
+
+                  {onOfflineLogin && (
+                    <div className="space-y-3 pt-1">
+                      <div className="relative flex py-1 items-center">
+                        <div className="flex-grow border-t border-[#1F2937]"></div>
+                        <span className="flex-shrink mx-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Or Offline PHC Screening</span>
+                        <div className="flex-grow border-t border-[#1F2937]"></div>
+                      </div>
+
+                      <button
+                        type="button"
+                        id="offline-phc-btn"
+                        onClick={onOfflineLogin}
+                        className="w-full py-3.5 px-4 rounded-2xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 active:scale-95 shadow-lg shadow-emerald-950/20"
+                      >
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        ⚡ Offline Rural PHC Mode (Instant Demo)
+                      </button>
+                    </div>
+                  )}
 
                   <div className="text-center pt-2">
                     <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">
