@@ -314,7 +314,7 @@ async def run_inference(
     # If CSME detected, escalate urgency note
     urgency_text = result['urgency']
     if arbitration['has_macular_edema']:
-        urgency_text = "Immediate referral for OCT & anti-VEGF injection (CSME detected within 1 DD of fovea)"
+        urgency_text = "URGENT: Clinically Significant Macular Edema (CSME) detected within 1 DD of fovea. Immediate referral for OCT & anti-VEGF injection."
 
     # 7. Pack response
     response = {

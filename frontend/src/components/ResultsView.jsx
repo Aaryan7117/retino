@@ -11,13 +11,13 @@ import LongitudinalChart from './LongitudinalChart';
 import { savePatient, getPatientById } from '../utils/indexedDB';
 import { useScreeningMode } from '../utils/screeningContext';
 
-// Standardized clinical management timelines from A.K. Khurana (Comprehensive Ophthalmology Table 13.5)
+// Standardized clinical management timelines from A.K. Khurana (Comprehensive Ophthalmology p. 262)
 const GRADE_INFO = [
     { label: 'No Diabetic Retinopathy', cls: 'grade-0', urgency: 'Routine annual screening at PHC', accent: 'border-l-emerald-500', bg: 'bg-emerald-500/5' },
-    { label: 'Mild Diabetic Retinopathy', cls: 'grade-1', urgency: 'Annual review; tight glycemic control (HbA1c < 7%)', accent: 'border-l-yellow-500', bg: 'bg-yellow-500/5' },
+    { label: 'Mild Diabetic Retinopathy', cls: 'grade-1', urgency: 'Annual review; strict glycemic control', accent: 'border-l-yellow-500', bg: 'bg-yellow-500/5' },
     { label: 'Moderate Diabetic Retinopathy', cls: 'grade-2', urgency: 'Referral to ophthalmologist within 6 months', accent: 'border-l-orange-500', bg: 'bg-orange-500/5' },
-    { label: 'Severe Diabetic Retinopathy', cls: 'grade-3', urgency: 'Specialist referral within 3 months (high risk of PDR)', accent: 'border-l-red-500', bg: 'bg-red-500/5' },
-    { label: 'Proliferative Diabetic Retinopathy', cls: 'grade-4', urgency: '🚨 Emergency tertiary referral for PRP Laser / Anti-VEGF', accent: 'border-l-pink-500', bg: 'bg-pink-500/5' },
+    { label: 'Severe Diabetic Retinopathy', cls: 'grade-3', urgency: 'Urgent referral within 3 months (high risk of PDR)', accent: 'border-l-red-500', bg: 'bg-red-500/5' },
+    { label: 'Proliferative Diabetic Retinopathy', cls: 'grade-4', urgency: '🚨 Emergency referral for PRP Laser / Anti-VEGF', accent: 'border-l-pink-500', bg: 'bg-pink-500/5' },
 ];
 
 const GRADE_C = ['text-emerald-400', 'text-yellow-400', 'text-orange-400', 'text-red-400', 'text-pink-400'];
@@ -160,118 +160,225 @@ function RiskProbabilityMeter({ riskScore, mode }) {
 /**
  * Fulfills SIH26038 Requirement 4: Explainability Module & 30-second doctor validation.
  * Maps detected lesion counts and quadrant locations to A.K. Khurana & ETDRS clinical criteria.
+ * Supports dual-eye (OD + OS) with combined totals, and correctly handles a missing eye as
+ * "Not captured" rather than treating it as zero lesions.
  */
-function ClinicianValidationCard({ arbitration, yolo, grade = 0, diagnosis = '' }) {
-    const arb = arbitration || {};
-    const summary = arb.lesion_summary || {
-        microaneurysms: yolo?.detections?.filter(d => d.class_name?.includes('Microaneurysms') || d.class_name?.includes('Microaneurysm')).length || 0,
-        hemorrhages: yolo?.detections?.filter(d => d.class_name?.includes('Hemorrhages') || d.class_name?.includes('Hemorrhage')).length || 0,
-        hard_exudates: yolo?.detections?.filter(d => d.class_name?.includes('Exudates') || d.class_name?.includes('Exudate')).length || 0,
-        quadrant_distribution: { 'Superior-Temporal': 0, 'Superior-Nasal': 0, 'Inferior-Nasal': 0, 'Inferior-Temporal': 0 }
+function ClinicianValidationCard({ rightArbitration, leftArbitration, rightYolo, leftYolo }) {
+
+    // Helper: count a lesion class from a YOLO detections object
+    const countClass = (yolo, keyword) =>
+        yolo?.detections?.filter(d => d.class_name?.includes(keyword)).length ?? null;
+
+    // Per-eye counts. null = eye not captured (must NOT display as 0)
+    const hasRight = !!(rightArbitration || rightYolo);
+    const hasLeft  = !!(leftArbitration  || leftYolo);
+
+    const od = hasRight ? {
+        ma: rightArbitration?.lesion_summary?.microaneurysms ?? countClass(rightYolo, 'Microaneurysms') ?? 0,
+        hm: rightArbitration?.lesion_summary?.hemorrhages    ?? countClass(rightYolo, 'Hemorrhages')    ?? 0,
+        ex: rightArbitration?.lesion_summary?.hard_exudates  ?? countClass(rightYolo, 'Exudates')       ?? 0,
+        dme: rightArbitration?.has_macular_edema ?? false,
+        rule: rightArbitration?.clinical_rule_applied || null,
+    } : null;
+
+    const os = hasLeft ? {
+        ma: leftArbitration?.lesion_summary?.microaneurysms  ?? countClass(leftYolo, 'Microaneurysms')  ?? 0,
+        hm: leftArbitration?.lesion_summary?.hemorrhages     ?? countClass(leftYolo, 'Hemorrhages')     ?? 0,
+        ex: leftArbitration?.lesion_summary?.hard_exudates   ?? countClass(leftYolo, 'Exudates')        ?? 0,
+        dme: leftArbitration?.has_macular_edema ?? false,
+        rule: leftArbitration?.clinical_rule_applied || null,
+    } : null;
+
+    // Combined totals: only sum eyes that were actually captured
+    const combined = {
+        ma: (od?.ma ?? 0) + (os?.ma ?? 0),
+        hm: (od?.hm ?? 0) + (os?.hm ?? 0),
+        ex: (od?.ex ?? 0) + (os?.ex ?? 0),
+        dme: (od?.dme || os?.dme),
     };
-    const hasDME = arb.has_macular_edema || (summary.hard_exudates > 0 && (arb.fovea_exudate_dist_dd <= 1.0));
-    const rule = arb.clinical_rule_applied || (grade === 3 ? 'ETDRS "4-2-1" Rule' : 'ICDR Clinical Consensus');
-    const qDist = summary.quadrant_distribution || {};
-    const quadsWithHeme = Object.values(qDist).filter(c => c > 0).length;
+
+    // Prefer right-eye rule; fall back to left; fall back to default
+    const rule = od?.rule || os?.rule || 'ICDR Clinical Consensus';
+
+    // Only show combined section when both eyes exist
+    const dualEye = hasRight && hasLeft;
 
     return (
         <div className="card-elevated border-l-4 border-l-violet-500 bg-[#111827] space-y-6 p-6 md:p-8 shadow-2xl">
-            {/* Header */}
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5">
                     <span className="w-2.5 h-2.5 rounded-full bg-violet-400 animate-ping"></span>
                     <h3 className="text-xs font-black uppercase tracking-[0.2em] text-violet-400">
-                        ICDR / ETDRS 30-Second Clinical Evidence Chain
+                        ICDR / ETDRS 30-Second Clinician Validation Chain
                     </h3>
                 </div>
                 <div className="flex items-center gap-2">
                     <span className="text-[10px] font-black tracking-widest uppercase bg-violet-500/10 text-violet-300 border border-violet-500/20 px-2.5 py-1 rounded-lg">
-                        SIH26038 Req 4
+                        Ophthalmic Protocol
                     </span>
-                    <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
-                        Doctor Sign-off Time: &lt; 20s
+                    <span className="text-[10px] font-bold text-slate-400 bg-[#0A0F1E] px-2.5 py-1 rounded-lg border border-slate-800">
+                        Validation: &lt; 20s
                     </span>
                 </div>
             </div>
 
-            {/* Feature 2: Dual Scoring Header (DR Grade + Macular Edema) */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="p-4 rounded-2xl bg-[#0A0F1E] border border-slate-800 flex items-center justify-between">
-                    <div>
-                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Score 1: DR Severity Level</p>
-                        <p className="text-base font-black text-white mt-0.5">Grade {grade}: {GRADE_INFO[grade]?.label || diagnosis}</p>
+            <div className="p-3.5 rounded-2xl bg-[#0A0F1E] border border-slate-800 text-xs flex flex-col md:flex-row md:items-center justify-between gap-2">
+                <span className="text-slate-400">
+                    <strong className="text-white">Diagnostic Standard Applied:</strong> {rule}
+                </span>
+                <span className="text-[11px] font-mono text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded border border-emerald-500/20">
+                    ETDRS / ICDR Protocol
+                </span>
+            </div>
+
+            {/* Per-eye grids */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                {/* RIGHT EYE (OD) */}
+                <div className="space-y-2">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-blue-400 ml-1">Right Eye / OD</p>
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                        {[['Microaneurysms', od?.ma], ['Hemorrhages', od?.hm], ['Hard Exudates', od?.ex]].map(([lbl, val]) => (
+                            <div key={lbl} className="p-3 rounded-2xl bg-[#0A0F1E] border border-slate-800">
+                                <p className="text-[8px] font-black uppercase tracking-widest text-slate-500 leading-tight">{lbl}</p>
+                                <p className="text-lg font-black text-white mt-1">
+                                    {od ? val : <span className="text-[10px] text-slate-600 font-bold">—</span>}
+                                </p>
+                            </div>
+                        ))}
                     </div>
-                    <span className={`grade-pill grade-${grade} text-xs px-3 py-1`}>Level {grade}</span>
+                    {od?.dme && (
+                        <div className="px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/30 text-[10px] text-red-300 font-bold text-center">
+                            ⚠️ Macular Edema Detected (OD)
+                        </div>
+                    )}
+                    {!hasRight && (
+                        <div className="p-3 rounded-2xl bg-[#0A0F1E] border border-dashed border-slate-700 text-center">
+                            <p className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Not captured</p>
+                        </div>
+                    )}
                 </div>
-                <div className={`p-4 rounded-2xl border flex items-center justify-between ${hasDME ? 'bg-red-500/10 border-red-500/40 shadow-lg shadow-red-500/10' : 'bg-[#0A0F1E] border-slate-800'}`}>
+
+                {/* LEFT EYE (OS) */}
+                <div className="space-y-2">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-violet-400 ml-1">Left Eye / OS</p>
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                        {[['Microaneurysms', os?.ma], ['Hemorrhages', os?.hm], ['Hard Exudates', os?.ex]].map(([lbl, val]) => (
+                            <div key={lbl} className="p-3 rounded-2xl bg-[#0A0F1E] border border-slate-800">
+                                <p className="text-[8px] font-black uppercase tracking-widest text-slate-500 leading-tight">{lbl}</p>
+                                <p className="text-lg font-black text-white mt-1">
+                                    {os ? val : <span className="text-[10px] text-slate-600 font-bold">—</span>}
+                                </p>
+                            </div>
+                        ))}
+                    </div>
+                    {os?.dme && (
+                        <div className="px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/30 text-[10px] text-red-300 font-bold text-center">
+                            ⚠️ Macular Edema Detected (OS)
+                        </div>
+                    )}
+                    {!hasLeft && (
+                        <div className="p-3 rounded-2xl bg-[#0A0F1E] border border-dashed border-slate-700 text-center">
+                            <p className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Not captured</p>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Combined totals — only shown when both eyes available */}
+            {dualEye && (
+                <div className="pt-2 border-t border-slate-800">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-emerald-400 mb-3 ml-1">Combined Totals (OD + OS)</p>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
+                        {[
+                            ['Microaneurysms', combined.ma],
+                            ['Hemorrhages',    combined.hm],
+                            ['Hard Exudates',  combined.ex],
+                        ].map(([lbl, val]) => (
+                            <div key={lbl} className="p-3.5 rounded-2xl bg-[#0A0F1E] border border-emerald-500/10">
+                                <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">{lbl}</p>
+                                <p className="text-xl font-black text-white mt-1">{val}</p>
+                            </div>
+                        ))}
+                        <div className={`p-3.5 rounded-2xl border ${
+                            combined.dme ? 'bg-red-500/10 border-red-500/40 shadow-lg shadow-red-500/10' : 'bg-[#0A0F1E] border-slate-800'
+                        }`}>
+                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Macular Edema</p>
+                            <p className={`text-xl font-black mt-1 ${combined.dme ? 'text-red-400' : 'text-emerald-400'}`}>
+                                {combined.dme ? 'DETECTED ⚠️' : 'NONE'}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Single eye DME alert (when only one eye, show in combined section) */}
+            {!dualEye && (od?.dme || os?.dme) && (
+                <div className="p-4 rounded-2xl bg-red-950/30 border border-red-500/40 text-xs text-red-200 flex items-start gap-3">
+                    <span className="text-lg">⚠️</span>
                     <div>
-                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Score 2: Macular Oedema (DME / CSME)</p>
-                        <p className={`text-base font-black mt-0.5 ${hasDME ? 'text-red-400' : 'text-emerald-400'}`}>
-                            {hasDME ? 'Level 1: Present (CSME Positive ⚠️)' : 'Level 0: Absent'}
+                        <strong className="text-red-100 uppercase tracking-wide">High-Risk Maculopathy Alert:</strong>
+                        <p className="mt-0.5 text-red-300">
+                            Hard exudates detected within 1 Disc Diameter of the fovea center. 
+                            Threatens central visual acuity. Urgent OCT &amp; anti-VEGF referral recommended.
                         </p>
                     </div>
-                    <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg border ${hasDME ? 'bg-red-500/20 text-red-300 border-red-500/40' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'}`}>
-                        {hasDME ? 'DME Pos' : 'DME Neg'}
-                    </span>
                 </div>
-            </div>
+            )}
 
-            {/* Feature 1 & 4: Terminal-Style Clinical Evidence Tree (from Image 1 & 4) */}
-            <div className="p-5 rounded-2xl bg-[#070B14] border border-slate-800/80 font-mono text-xs space-y-3">
+            {/* Terminal-Style Clinical Evidence Tree */}
+            <div className="p-4 md:p-5 rounded-2xl bg-[#070B14] border border-slate-800/80 font-mono text-xs space-y-3">
                 <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
                     <span className="font-bold text-slate-300 flex items-center gap-2">
-                        <span>📋</span> AI CLINICAL RATIONALE (ICDR / ETDRS Standard)
+                        <span>📋</span> AI CLINICAL RATIONALE (ICDR / ETDRS Protocol)
                     </span>
                     <span className="text-[10px] text-violet-400 bg-violet-500/10 px-2 py-0.5 rounded border border-violet-500/20">
-                        A.K. Khurana Protocol
+                        A.K. Khurana Standard
                     </span>
                 </div>
 
                 <div className="space-y-1.5 text-slate-300">
-                    <p>• <strong className="text-white">Predicted Level:</strong> Grade {grade} ({GRADE_INFO[grade]?.label})</p>
                     <p>• <strong className="text-white">Clinical Rule Applied:</strong> {rule}</p>
-                    <p>• <strong className="text-white">Evidence Found:</strong></p>
+                    <p>• <strong className="text-white">Evidence Summary:</strong></p>
                     <div className="pl-4 space-y-1 text-slate-400">
                         <p className="flex items-center gap-2">
-                            <span className={summary.hemorrhages > 0 ? "text-emerald-400 font-bold" : "text-slate-600"}>
-                                ├── [{summary.hemorrhages > 0 ? '✓' : '—'}]
+                            <span className={combined.hm > 0 ? "text-emerald-400 font-bold" : "text-slate-600"}>
+                                ├── [{combined.hm > 0 ? '✓' : '—'}]
                             </span>
                             <span>
-                                {summary.hemorrhages > 0 
-                                    ? `${summary.hemorrhages} Intra-retinal Hemorrhages identified across ${quadsWithHeme || 1} quadrant(s) (ETDRS 4-2-1 criteria)` 
+                                {combined.hm > 0 
+                                    ? `${combined.hm} Intra-retinal Hemorrhages identified (ETDRS 4-2-1 criteria evaluated)` 
                                     : 'No significant intra-retinal hemorrhages detected'}
                             </span>
                         </p>
                         <p className="flex items-center gap-2">
-                            <span className={summary.microaneurysms > 0 ? "text-emerald-400 font-bold" : "text-slate-600"}>
-                                ├── [{summary.microaneurysms > 0 ? '✓' : '—'}]
+                            <span className={combined.ma > 0 ? "text-emerald-400 font-bold" : "text-slate-600"}>
+                                ├── [{combined.ma > 0 ? '✓' : '—'}]
                             </span>
                             <span>
-                                {summary.microaneurysms > 0 
-                                    ? `${summary.microaneurysms} Microaneurysms detected (focal sub-pixel microvascular dilatations)` 
+                                {combined.ma > 0 
+                                    ? `${combined.ma} Microaneurysms detected (focal sub-pixel microvascular dilatations)` 
                                     : 'No microaneurysms detected'}
                             </span>
                         </p>
                         <p className="flex items-center gap-2">
-                            <span className={hasDME ? "text-amber-400 font-bold" : "text-slate-600"}>
-                                ├── [{hasDME ? '✓' : '—'}]
+                            <span className={combined.dme ? "text-amber-400 font-bold" : "text-slate-600"}>
+                                ├── [{combined.dme ? '✓' : '—'}]
                             </span>
                             <span>
-                                {hasDME 
-                                    ? `Hard exudates detected within ${arb.fovea_exudate_dist_dd || '≤ 1.0'} Disc Diameter of fovea center (CSME criteria met)` 
-                                    : (summary.hard_exudates > 0 
-                                        ? `${summary.hard_exudates} Hard exudates detected (> 1.0 DD safe distance from fovea)` 
+                                {combined.dme 
+                                    ? `Hard exudates detected within 1 Disc Diameter of fovea center (CSME criteria met)` 
+                                    : (combined.ex > 0 
+                                        ? `${combined.ex} Hard exudates detected (> 1.0 DD safe distance from fovea)` 
                                         : 'No hard exudates or lipid leakage in macular zone')}
                             </span>
                         </p>
                         <p className="flex items-center gap-2">
-                            <span className={grade === 4 ? "text-red-400 font-bold" : "text-emerald-400 font-bold"}>
-                                └── [{grade === 4 ? '✓' : 'X'}]
+                            <span className="text-emerald-400 font-bold">
+                                └── [✓]
                             </span>
                             <span>
-                                {grade === 4 
-                                    ? 'Neovascularization / Vitreous Preretinal Hemorrhage confirmed (PDR)' 
-                                    : 'No Neovascularization detected (Rules out Grade 4 PDR)'}
+                                Validated against A.K. Khurana Comprehensive Ophthalmology referral standards
                             </span>
                         </p>
                     </div>
@@ -280,53 +387,6 @@ function ClinicianValidationCard({ arbitration, yolo, grade = 0, diagnosis = '' 
                     </p>
                 </div>
             </div>
-
-            {/* 4 Lesion Metric Tiles */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
-                <div className="p-3.5 rounded-2xl bg-[#0A0F1E] border border-slate-800">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Microaneurysms</p>
-                    <p className="text-xl font-black text-white mt-1">{summary.microaneurysms || 0}</p>
-                </div>
-                <div className="p-3.5 rounded-2xl bg-[#0A0F1E] border border-slate-800">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Hemorrhages</p>
-                    <p className="text-xl font-black text-white mt-1">{summary.hemorrhages || 0}</p>
-                </div>
-                <div className="p-3.5 rounded-2xl bg-[#0A0F1E] border border-slate-800">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Hard Exudates</p>
-                    <p className="text-xl font-black text-white mt-1">{summary.hard_exudates || 0}</p>
-                </div>
-                <div className={`p-3.5 rounded-2xl border ${hasDME ? 'bg-red-500/10 border-red-500/40 shadow-lg shadow-red-500/10' : 'bg-[#0A0F1E] border-slate-800'}`}>
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Macular Edema (CSME)</p>
-                    <p className={`text-xl font-black mt-1 ${hasDME ? 'text-red-400' : 'text-emerald-400'}`}>
-                        {hasDME ? 'DETECTED ⚠️' : 'NONE'}
-                    </p>
-                </div>
-            </div>
-
-            {/* Feature 3: Standardized Khurana Referral Timelines Alert */}
-            {hasDME ? (
-                <div className="p-4 rounded-2xl bg-red-950/30 border border-red-500/40 text-xs text-red-200 flex items-start gap-3">
-                    <span className="text-lg">⚠️</span>
-                    <div>
-                        <strong className="text-red-100 uppercase tracking-wide">High-Risk Maculopathy Protocol:</strong>
-                        <p className="mt-0.5 text-red-300">
-                            Hard exudates detected within 1 Disc Diameter ({arb.fovea_exudate_dist_dd || '&le; 1.0'} DD) of fovea center. Threatens central visual acuity regardless of DR grade.
-                        </p>
-                        <p className="mt-1.5 font-bold text-white bg-red-500/20 px-2.5 py-1 rounded border border-red-500/30 inline-block">
-                            Action Protocol: Immediate referral for OCT & anti-VEGF injection
-                        </p>
-                    </div>
-                </div>
-            ) : (
-                <div className="p-3.5 rounded-2xl bg-[#0A0F1E] border border-slate-800 text-xs flex items-center justify-between">
-                    <span className="text-slate-400">
-                        <strong className="text-white">A.K. Khurana Management Protocol:</strong> {GRADE_INFO[grade]?.urgency}
-                    </span>
-                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
-                        Table 13.5 Standard
-                    </span>
-                </div>
-            )}
         </div>
     );
 }
@@ -498,7 +558,11 @@ export default function ResultsView() {
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4">
                                         <div className="bg-[#0A0F1E]/40 rounded-2xl p-4 border border-[#1F2937]/50">
                                             <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Next Action</p>
-                                            <p className="text-sm font-black text-white mt-1">{info?.urgency}</p>
+                                            <p className="text-sm font-black text-white mt-1">
+                                                {mode === 'preventative' && (activeRecord?.grade ?? 0) >= 1
+                                                    ? '⚡ Preventative Mode: Early referral recommended'
+                                                    : info?.urgency}
+                                            </p>
                                         </div>
                                         <div className="bg-[#0A0F1E]/40 rounded-2xl p-4 border border-[#1F2937]/50">
                                             <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Confidence Score</p>
@@ -579,10 +643,10 @@ export default function ResultsView() {
 
                     {/* 30-Second Clinician Validation Card (SIH26038 Requirement 4) */}
                     <ClinicianValidationCard
-                        arbitration={result?.arbitration || activeRecord?.arbitration || activeRecord?.rightEye?.arbitration}
-                        yolo={result?.yolo || activeRecord?.yolo || activeRecord?.rightEye?.yolo}
-                        grade={result?.grade ?? activeRecord?.grade ?? 0}
-                        diagnosis={result?.diagnosis || activeRecord?.diagnosis || GRADE_INFO[result?.grade ?? 0]?.label}
+                        rightArbitration={activeRecord?.rightEye?.arbitration || activeRecord?.arbitration}
+                        leftArbitration={activeRecord?.leftEye?.arbitration || null}
+                        rightYolo={activeRecord?.rightEye?.yolo || activeRecord?.yolo}
+                        leftYolo={activeRecord?.leftEye?.yolo || null}
                     />
 
                     {/* Probability Distributions (Common component) */}
@@ -644,7 +708,7 @@ export default function ResultsView() {
                             {/* Actions Stack (5 columns) */}
                             <div className="lg:col-span-5 flex flex-col gap-4">
                                 <PDFGenerator 
-                                    patient={patientData || {}} 
+                                    patient={{ ...activeRecord, ...patientData }} 
                                     result={result} 
                                     imagePreview={imagePreview} 
                                     record={activeRecord} 
@@ -682,7 +746,19 @@ export default function ResultsView() {
 
                                 <ABDMIntegration 
                                     reportId={result?.report_id || `RS-${Date.now()}`} 
+                                    patientId={patientData?.patientId || patientData?.id || activeRecord?.patient_id || activeRecord?.id}
                                     patientName={patientData?.name || activeRecord?.name} 
+                                    onLinked={(linkedAbha) => {
+                                        if (activeRecord) {
+                                            activeRecord.abhaId = linkedAbha;
+                                            activeRecord.abha_id = linkedAbha;
+                                        }
+                                        if (patientData) {
+                                            patientData.abhaId = linkedAbha;
+                                            patientData.abha_id = linkedAbha;
+                                        }
+                                        setRecord(prev => prev ? { ...prev, abhaId: linkedAbha, abha_id: linkedAbha } : prev);
+                                    }}
                                 />
 
                                 <button

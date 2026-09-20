@@ -20,7 +20,20 @@ export default function PDFGenerator({ patient, result, imagePreview, record, la
     const handleGenerate = async () => {
         setStatus('generating');
         try {
-            await generatePDF({ patient, result, imagePreview, record, language, abhaId: patient?.abhaId || '', patientState: patient?.state || '' });
+            const abhaId = patient?.abhaId || patient?.abha_id || record?.abhaId || record?.abha_id || '';
+            const insuranceId = patient?.abdmInsuranceId || patient?.abdm_insurance_id || record?.abdmInsuranceId || record?.abdm_insurance_id || '';
+            const patientState = patient?.state || record?.state || '';
+
+            await generatePDF({ 
+                patient, 
+                result, 
+                imagePreview, 
+                record, 
+                language, 
+                abhaId, 
+                insuranceId, 
+                patientState 
+            });
             setStatus('done');
             setTimeout(() => setStatus('idle'), 3000);
         } catch (err) {
