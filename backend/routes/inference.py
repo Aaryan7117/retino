@@ -141,36 +141,66 @@ def is_blurry(image_np: np.ndarray, threshold: float = 100.0) -> bool:
 
 def generate_evidence_heatmap(image_np: np.ndarray) -> str:
     """
-    Generate genuine pathology saliency heatmap.
-    Extracts high-frequency microvascular anomalies in green channel (maximal retinal contrast),
-    isolating microaneurysms, hemorrhages, and exudates.
+    Generate genuine pathology saliency heatmap with optic disc suppression
+    and clean alpha-blended clinical thermal overlay (no purple background).
     """
     if len(image_np.shape) == 2:
         image_np = cv2.cvtColor(image_np, cv2.COLOR_GRAY2RGB)
     image_np = image_np[:, :, :3]
+    h, w = image_np.shape[:2]
 
-    # Green channel extraction
+    # 1. Detect and suppress Optic Disc (physiological bright circular region)
+    red = image_np[:, :, 0] # RGB Red channel
+    blurred_red = cv2.GaussianBlur(red, (35, 35), 0)
+    margin_y, margin_x = int(h * 0.08), int(w * 0.08)
+    inner_red = blurred_red[margin_y:h-margin_y, margin_x:w-margin_x]
+    _, _, _, max_loc = cv2.minMaxLoc(inner_red)
+    od_x, od_y = max_loc[0] + margin_x, max_loc[1] + margin_y
+    od_radius = int(min(h, w) * 0.12)
+
+    od_mask = np.ones((h, w), dtype=np.float32)
+    cv2.circle(od_mask, (od_x, od_y), od_radius, 0.05, -1)
+    od_mask = cv2.GaussianBlur(od_mask, (31, 31), 0)
+
+    # 2. Green channel extraction (maximal hemoglobin & exudate contrast)
     green = image_np[:, :, 1]
-    
-    # Adaptive CLAHE to equalize fundus illumination
     clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
     enhanced = clahe.apply(green)
-    
-    # Isolate high-frequency lesion features by subtracting smooth retinal background
+
+    # 3. High-frequency lesion anomaly isolation
     background = cv2.GaussianBlur(enhanced, (25, 25), 0)
-    diff = cv2.absdiff(enhanced, background)
-    
-    # Focus attention on lesions (high-variance areas)
-    _, thresh = cv2.threshold(diff, 20, 255, cv2.THRESH_TOZERO)
-    blurred_diff = cv2.GaussianBlur(thresh, (15, 15), 0)
-    norm_heatmap = cv2.normalize(blurred_diff, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-    
-    # Apply colormap JET to lesion anomalies
-    colored_map = cv2.applyColorMap(norm_heatmap, cv2.COLORMAP_JET)
-    
-    # Blend with original fundus scan (65% original + 35% lesion heatmap)
-    blended = cv2.addWeighted(image_np, 0.65, colored_map, 0.35, 0)
-    _, buffer = cv2.imencode(".jpg", cv2.cvtColor(blended, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 90])
+    diff = cv2.absdiff(enhanced, background).astype(np.float32) * od_mask
+    diff = np.maximum(0, diff - 10)
+    blurred_diff = cv2.GaussianBlur(diff, (11, 11), 0)
+    norm_heatmap = blurred_diff / (blurred_diff.max() + 1e-6)
+
+    # 4. Adaptive alpha blending (Keep healthy retina 100% natural, zero purple haze!)
+    out = image_np.astype(np.float32).copy()
+    mask = norm_heatmap > 0.16
+    alpha = np.clip((norm_heatmap - 0.16) / 0.84 * 0.70, 0, 0.70)[..., np.newaxis]
+
+    heat_color = np.zeros((h, w, 3), dtype=np.float32)
+    t = norm_heatmap
+    c1 = np.array([240, 220, 20], dtype=np.float32)
+    c2 = np.array([255, 120, 0], dtype=np.float32)
+    c3 = np.array([255, 20, 10], dtype=np.float32)
+
+    m1 = (t >= 0.16) & (t < 0.45)
+    f1 = ((t - 0.16) / 0.29)[m1, np.newaxis]
+    heat_color[m1] = (1 - f1) * np.array([200, 230, 40], dtype=np.float32) + f1 * c1
+
+    m2 = (t >= 0.45) & (t < 0.75)
+    f2 = ((t - 0.45) / 0.30)[m2, np.newaxis]
+    heat_color[m2] = (1 - f2) * c1 + f2 * c2
+
+    m3 = t >= 0.75
+    f3 = ((t - 0.75) / 0.25)[m3, np.newaxis]
+    heat_color[m3] = (1 - f3) * c2 + f3 * c3
+
+    out[mask] = out[mask] * (1 - alpha[mask]) + heat_color[mask] * alpha[mask]
+    out = np.clip(out, 0, 255).astype(np.uint8)
+
+    _, buffer = cv2.imencode(".jpg", cv2.cvtColor(out, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 92])
     return "data:image/jpeg;base64," + base64.b64encode(buffer).decode("utf-8")
 
 
