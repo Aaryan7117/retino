@@ -30,19 +30,37 @@ clientsClaim();
 cleanupOutdatedCaches();
 precacheAndRoute(self.__WB_MANIFEST);
 
-// --- Pre-cache models & WASM during installation (Fix 4) ---
+// --- Pre-cache models & WASM during installation incrementally without failing install ---
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
   event.waitUntil(
-    caches.open(`retinascan-models-${APP_VERSION}`).then(cache => cache.addAll([
-      '/models/retina_model.onnx',
-      '/models/yolo_lesions.onnx',
-      '/wasm/ort-wasm-simd-threaded.wasm',
-      '/wasm/ort-wasm-simd-threaded.asyncify.wasm',
-    ]))
+    caches.open('retinascan-models-permanent').then(async (cache) => {
+      const urls = [
+        '/models/retina_model.onnx',
+        '/models/yolo_lesions.onnx',
+        '/models/cam_weights.bin',
+        '/wasm/ort-wasm-simd-threaded.wasm',
+        '/wasm/ort-wasm-simd-threaded.asyncify.wasm',
+        '/wasm/ort-wasm-simd-threaded.jsep.wasm',
+      ];
+      await Promise.allSettled(
+        urls.map(async (url) => {
+          const match = await cache.match(url);
+          if (!match) {
+            try {
+              const res = await fetch(url);
+              if (res.ok) await cache.put(url, res);
+            } catch (err) {
+              console.warn('[SW] Model pre-cache deferred for:', url, err.message);
+            }
+          }
+        })
+      );
+    })
   );
 });
 
-// --- On activate: clear caches from previous version ---
+// --- On activate: clear static caches from previous version, preserving permanent models ---
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
@@ -52,7 +70,9 @@ self.addEventListener("activate", (event) => {
           keys
             .filter(
               (name) =>
-                !name.includes(APP_VERSION) && name.startsWith("retinascan-"),
+                name.startsWith("retinascan-") &&
+                !name.includes("models-permanent") &&
+                !name.includes(APP_VERSION),
             )
             .map((name) => caches.delete(name)),
         ),
@@ -102,15 +122,15 @@ registerRoute(
   }),
 );
 
-// --- ONNX model & WASM engine (cache-first after first download) ---
+// --- ONNX model & WASM engine (permanent cache-first, maxEntries: 60) ---
 registerRoute(
   ({ url }) =>
     url.pathname.startsWith("/models/") || url.pathname.startsWith("/wasm/"),
   new CacheFirst({
-    cacheName: `retinascan-models-${APP_VERSION}`,
+    cacheName: 'retinascan-models-permanent',
     plugins: [
       new CacheableResponsePlugin({ statuses: [0, 200] }),
-      new ExpirationPlugin({ maxEntries: 3, maxAgeSeconds: 90 * 24 * 60 * 60 }),
+      new ExpirationPlugin({ maxEntries: 60, maxAgeSeconds: 365 * 24 * 60 * 60 }),
     ],
   }),
 );
