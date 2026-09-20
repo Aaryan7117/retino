@@ -11,6 +11,7 @@
  *  - Falls back to local mock if backend is unreachable
  */
 import { useState } from 'react';
+import { updatePatientAbha } from '../utils/indexedDB';
 
 /* ── ABHA auto-formatter ────────────────────────────────── */
 function formatAbha(val) {
@@ -36,7 +37,7 @@ function Spinner() {
 /* ══════════════════════════════════════════════════════════
    MAIN COMPONENT
    ══════════════════════════════════════════════════════════ */
-export default function ABDMIntegration({ reportId, patientName, onLinked }) {
+export default function ABDMIntegration({ reportId, patientId, patientName, onLinked }) {
     const [open, setOpen] = useState(false);
     const [abhaId, setAbhaId] = useState('');
     const [status, setStatus] = useState('idle');   // idle | loading | success | error
@@ -69,6 +70,14 @@ export default function ABDMIntegration({ reportId, patientName, onLinked }) {
         } catch {
             // Backend not running — fallback to client-side mock (2 s delay)
             await new Promise(r => setTimeout(r, 2000));
+        }
+
+        // Persist ABHA ID into Supabase & IndexedDB
+        try {
+            const pId = patientId || reportId;
+            await updatePatientAbha(pId, abhaId);
+        } catch (saveErr) {
+            console.warn('Could not save ABHA ID to database:', saveErr);
         }
 
         setLinked(abhaId);
