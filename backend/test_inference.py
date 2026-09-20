@@ -1,13 +1,13 @@
 import urllib.request
 import json
+import os
 
 # Test 1: health check
 req = urllib.request.urlopen("http://localhost:8000/health")
 print("Health:", req.read().decode())
 
 # Test 2: inference with real image
-import urllib.parse, os
-image_path = r"d:\retinopathy - Copy - Copy\frontend\public\sample-data\grade3.jpg"
+image_path = os.path.join(os.path.dirname(__file__), "../data/samples/idrid_samples/idrid_grade_3.jpg")
 
 boundary = b"----retinaboundary"
 with open(image_path, "rb") as f:
@@ -22,7 +22,7 @@ body = (
 )
 
 req2 = urllib.request.Request(
-    "http://localhost:8000/api/inference/inference/",
+    "http://localhost:8000/api/inference/",
     data=body,
     headers={"Content-Type": f"multipart/form-data; boundary=----retinaboundary"},
     method="POST"
@@ -37,3 +37,8 @@ print("Risk level:", data.get("risk_level"))
 print("Risk score:", data.get("risk_score"))
 print("ONNX fallback note:", data.get("_note", "NONE — real ONNX ran OK"))
 print("Has heatmap:", bool(data.get("heatmap_url")))
+print("Arbitration:", json.dumps(data.get("arbitration"), indent=2))
+print("YOLO Detection Count:", data.get("yolo", {}).get("count"))
+if data.get("yolo", {}).get("detections"):
+    print("Sample Detections:", data["yolo"]["detections"][:3])
+

@@ -26,9 +26,9 @@ ort.env.wasm.proxy = false;
 console.log('[Worker] onnxruntime-web initialized. WASM base:', WASM_BASE);
 
 const YOLO_CLASSES = [
-    "External Bleeding",
-    "Exudates / Cotton Wool Spots / Retinal Scarring",
-    "Microaneurysms / Hemorrhages"
+    "Intraretinal Hemorrhages (Flame/Blot)",
+    "Hard Exudates / Cotton Wool Spots",
+    "Microaneurysms (Sub-pixel focal dilatations)"
 ];
 
 // ─── Post-Processing Utilities ────────────────────────────────────────────────
@@ -309,12 +309,13 @@ self.onmessage = async (e) => {
         const sumE   = exps.reduce((a, b) => a + b, 0);
         const class_probabilities = exps.map(e => parseFloat((e / sumE).toFixed(4)));
 
+        // Standardized clinical management timelines from A.K. Khurana (Comprehensive Ophthalmology p. 262)
         const MAP = [
-            { grade: 0, grade_label: 'No Diabetic Retinopathy', risk_level: 'LOW', risk_score: 15, urgency: 'Annual monitoring' },
-            { grade: 1, grade_label: 'Mild Diabetic Retinopathy', risk_level: 'LOW', risk_score: 35, urgency: 'Monitor in 6 months' },
-            { grade: 2, grade_label: 'Moderate Diabetic Retinopathy', risk_level: 'MEDIUM', risk_score: 55, urgency: 'Refer in 3 months' },
-            { grade: 3, grade_label: 'Severe Diabetic Retinopathy', risk_level: 'HIGH', risk_score: 85, urgency: 'Refer in 2 weeks' },
-            { grade: 4, grade_label: 'Proliferative Diabetic Retinopathy', risk_level: 'HIGH', risk_score: 98, urgency: 'Emergency Referral' }
+            { grade: 0, grade_label: 'No Diabetic Retinopathy', risk_level: 'LOW', risk_score: 10, urgency: 'Routine annual screening at PHC' },
+            { grade: 1, grade_label: 'Mild Diabetic Retinopathy', risk_level: 'LOW', risk_score: 28, urgency: 'Annual review; strict glycemic control' },
+            { grade: 2, grade_label: 'Moderate Diabetic Retinopathy', risk_level: 'MEDIUM', risk_score: 55, urgency: 'Referral to ophthalmologist within 6 months' },
+            { grade: 3, grade_label: 'Severe Diabetic Retinopathy', risk_level: 'HIGH', risk_score: 85, urgency: 'Urgent referral within 3 months (high risk of PDR)' },
+            { grade: 4, grade_label: 'Proliferative Diabetic Retinopathy', risk_level: 'HIGH', risk_score: 98, urgency: 'Emergency referral for PRP Laser / Anti-VEGF' }
         ];
         const gradeInfo = MAP[maxIdx] || MAP[2];
 
@@ -397,14 +398,74 @@ self.onmessage = async (e) => {
             heatmapBlob = await generateSobelHeatmap(imageData);
         }
 
+        // Clinical Arbitration Engine (A.K. Khurana / ETDRS standards)
+        const foveaX = imageData.width * 0.50;
+        const foveaY = imageData.height * 0.50;
+        const discDiameter = Math.max(imageData.width * 0.15, 50);
+        const quadrantCounts = { 'Superior-Temporal': 0, 'Superior-Nasal': 0, 'Inferior-Nasal': 0, 'Inferior-Temporal': 0 };
+        let totalMA = 0, totalHM = 0, totalEX = 0;
+        let minFoveaDistDD = Infinity;
+
+        detections.forEach(det => {
+            const [x1, y1, x2, y2] = det.bbox;
+            const cx = (x1 + x2) / 2;
+            const cy = (y1 + y2) / 2;
+            const q = (cx < foveaX && cy < foveaY) ? 'Superior-Temporal' :
+                      (cx >= foveaX && cy < foveaY) ? 'Superior-Nasal' :
+                      (cx >= foveaX && cy >= foveaY) ? 'Inferior-Nasal' : 'Inferior-Temporal';
+            det.quadrant = q;
+
+            if (det.class_name.includes('Hemorrhages')) { totalHM++; quadrantCounts[q]++; }
+            else if (det.class_name.includes('Microaneurysms')) { totalMA++; }
+            else if (det.class_name.includes('Exudates')) {
+                totalEX++;
+                const distDD = Math.sqrt((cx - foveaX) ** 2 + (cy - foveaY) ** 2) / discDiameter;
+                if (distDD < minFoveaDistDD) minFoveaDistDD = distDD;
+            }
+        });
+
+        const hasMacularEdema = (totalEX > 0) && (minFoveaDistDD <= 1.0);
+        const etdrs421Met = Object.values(quadrantCounts).every(c => c >= 20);
+
+        let finalGrade = maxIdx;
+        let clinicalRuleApplied = 'ICDR Softmax Consensus';
+
+        if (etdrs421Met && finalGrade < 3) {
+            finalGrade = 3;
+            clinicalRuleApplied = 'ETDRS 4-2-1 Rule: ≥20 hemorrhages in all 4 quadrants (Severe NPDR)';
+        } else if (maxIdx === 0 && (totalMA > 0 || totalHM > 0)) {
+            finalGrade = 1;
+            clinicalRuleApplied = 'ICDR Rule: Focal lesions detected in early scan (Mild NPDR)';
+        }
+
+        const finalGradeInfo = MAP[finalGrade] || gradeInfo;
+
         const result = {
-            ...gradeInfo,
-            confidence: class_probabilities[maxIdx] ?? (0.9 + Math.random() * 0.08),
-            class_probabilities, // Feature 2: softmax probs
+            ...finalGradeInfo,
+            grade: finalGrade,
+            is_referable: (finalGrade >= 2) || hasMacularEdema,
+            has_macular_edema: hasMacularEdema,
+            fovea_exudate_dist_dd: totalEX > 0 ? parseFloat(minFoveaDistDD.toFixed(2)) : null,
+            clinical_rule_applied: clinicalRuleApplied,
+            confidence: class_probabilities[finalGrade] ?? class_probabilities[maxIdx] ?? 0.92,
+            class_probabilities,
             yolo: {
                 detections,
                 num_detections: detections.length,
                 image_shape: [imageData.height, imageData.width]
+            },
+            arbitration: {
+                final_grade: finalGrade,
+                is_referable: (finalGrade >= 2) || hasMacularEdema,
+                has_macular_edema: hasMacularEdema,
+                fovea_exudate_dist_dd: totalEX > 0 ? parseFloat(minFoveaDistDD.toFixed(2)) : null,
+                clinical_rule_applied: clinicalRuleApplied,
+                lesion_summary: {
+                    microaneurysms: totalMA,
+                    hemorrhages: totalHM,
+                    hard_exudates: totalEX,
+                    quadrant_distribution: quadrantCounts
+                }
             },
             timestamp: new Date().toISOString()
         };

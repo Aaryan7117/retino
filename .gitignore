@@ -21,16 +21,30 @@ Thumbs.db
 # Python
 __pycache__/
 *.pyc
+*.pyo
 venv/
 .venv/
 env/
 .env/
 backend/venv/
 backend/.venv/
+*.log
 
-# ONNX / Model weights (large files)
-# Only keep retina_model.onnx in the frontend/public/models
-# If you have raw models in the root, ignore them
+# Root scratch / temporary files
 /*.onnx
 /*.pth
 /*.h5
+
+# Caches & Raw HuggingFace downloads
+**/.cache/
+data/checkpoints/
+data/**/*.parquet
+
+# Intermediate duplicate model exports (keep production retina_model.onnx, yolo_lesions.onnx, and best_retinascan_model.pt)
+backend/models/*_fp32.onnx
+backend/models/*_int8.onnx
+backend/models/retina_efficientnet_b3_trained.pt
+backend/models/retina_model_cbam_fp32.onnx
+backend/models/retina_model_trained_fp32.onnx
+backend/models/yolo_lesions_fp32.onnx
+backend/models/yolo_lesions_int8.onnx
