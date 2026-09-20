@@ -27,11 +27,11 @@ const PDF_TRANSLATIONS = {
         'Proliferative Diabetic Retinopathy'
     ],
     protocols: [
-        ['Grade 0', 'Routine annual monitoring', '12 months'],
-        ['Grade 1', 'Close clinical observation', '6 months'],
-        ['Grade 2', 'Referral to Ophthalmologist', 'Within 3 months'],
-        ['Grade 3', 'Urgent Specialist Referral', 'Within 2 weeks'],
-        ['Grade 4', 'Emergency Laser Interv.', 'Immediate']
+        ['Grade 0', 'Routine annual screening at PHC', '12 months'],
+        ['Grade 1', 'Annual review; strict glycemic control', '12 months'],
+        ['Grade 2', 'Referral to Ophthalmologist', 'Within 6 months'],
+        ['Grade 3', 'Urgent Specialist Referral (High risk of PDR)', 'Within 3 months'],
+        ['Grade 4', 'Emergency PRP Laser / Anti-VEGF', 'Immediate']
     ],
     notes: {
         vascular: 'Vascular abnormality requiring clinical correlation.',

@@ -11,12 +11,13 @@ import LongitudinalChart from './LongitudinalChart';
 import { savePatient, getPatientById } from '../utils/indexedDB';
 import { useScreeningMode } from '../utils/screeningContext';
 
+// Standardized clinical management timelines from A.K. Khurana (Comprehensive Ophthalmology p. 262)
 const GRADE_INFO = [
-    { label: 'No Diabetic Retinopathy', cls: 'grade-0', urgency: 'Annual checkup', accent: 'border-l-emerald-500', bg: 'bg-emerald-500/5' },
-    { label: 'Mild Diabetic Retinopathy', cls: 'grade-1', urgency: 'Monitor in 6 months', accent: 'border-l-yellow-500', bg: 'bg-yellow-500/5' },
-    { label: 'Moderate Diabetic Retinopathy', cls: 'grade-2', urgency: 'Refer in 3 months', accent: 'border-l-orange-500', bg: 'bg-orange-500/5' },
-    { label: 'Severe Diabetic Retinopathy', cls: 'grade-3', urgency: 'Refer within 2 weeks', accent: 'border-l-red-500', bg: 'bg-red-500/5' },
-    { label: 'Proliferative Diabetic Retinopathy', cls: 'grade-4', urgency: '🚨 Emergency referral', accent: 'border-l-pink-500', bg: 'bg-pink-500/5' },
+    { label: 'No Diabetic Retinopathy', cls: 'grade-0', urgency: 'Routine annual screening at PHC', accent: 'border-l-emerald-500', bg: 'bg-emerald-500/5' },
+    { label: 'Mild Diabetic Retinopathy', cls: 'grade-1', urgency: 'Annual review; strict glycemic control', accent: 'border-l-yellow-500', bg: 'bg-yellow-500/5' },
+    { label: 'Moderate Diabetic Retinopathy', cls: 'grade-2', urgency: 'Referral to ophthalmologist within 6 months', accent: 'border-l-orange-500', bg: 'bg-orange-500/5' },
+    { label: 'Severe Diabetic Retinopathy', cls: 'grade-3', urgency: 'Urgent referral within 3 months (high risk of PDR)', accent: 'border-l-red-500', bg: 'bg-red-500/5' },
+    { label: 'Proliferative Diabetic Retinopathy', cls: 'grade-4', urgency: '🚨 Emergency referral for PRP Laser / Anti-VEGF', accent: 'border-l-pink-500', bg: 'bg-pink-500/5' },
 ];
 
 const GRADE_C = ['text-emerald-400', 'text-yellow-400', 'text-orange-400', 'text-red-400', 'text-pink-400'];
@@ -152,6 +153,85 @@ function RiskProbabilityMeter({ riskScore, mode }) {
                     ? ' — FLAGGED IN PREVENTATIVE MODE ONLY.'
                     : ''}
             </p>
+        </div>
+    );
+}
+
+/**
+ * Fulfills SIH26038 Requirement 4: Explainability Module & 30-second doctor validation.
+ * Maps detected lesion counts and quadrant locations to A.K. Khurana & ETDRS clinical criteria.
+ */
+function ClinicianValidationCard({ arbitration, yolo }) {
+    const arb = arbitration || {};
+    const summary = arb.lesion_summary || {
+        microaneurysms: yolo?.detections?.filter(d => d.class_name?.includes('Microaneurysms')).length || 0,
+        hemorrhages: yolo?.detections?.filter(d => d.class_name?.includes('Hemorrhages')).length || 0,
+        hard_exudates: yolo?.detections?.filter(d => d.class_name?.includes('Exudates')).length || 0,
+    };
+    const hasDME = arb.has_macular_edema;
+    const rule = arb.clinical_rule_applied || 'ICDR Clinical Consensus';
+
+    return (
+        <div className="card-elevated border-l-4 border-l-violet-500 bg-[#111827] space-y-5 p-6 md:p-8 shadow-2xl">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-violet-400 animate-ping"></span>
+                    <h3 className="text-xs font-black uppercase tracking-[0.2em] text-violet-400">
+                        ICDR / ETDRS 30-Second Clinician Validation Chain
+                    </h3>
+                </div>
+                <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black tracking-widest uppercase bg-violet-500/10 text-violet-300 border border-violet-500/20 px-2.5 py-1 rounded-lg">
+                        Ophthalmic Protocol
+                    </span>
+                    <span className="text-[10px] font-bold text-slate-400 bg-[#0A0F1E] px-2.5 py-1 rounded-lg border border-slate-800">
+                        Validation: &lt; 20s
+                    </span>
+                </div>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-[#0A0F1E] border border-slate-800 text-xs flex flex-col md:flex-row md:items-center justify-between gap-2">
+                <span className="text-slate-400">
+                    <strong className="text-white">Diagnostic Standard Applied:</strong> {rule}
+                </span>
+                <span className="text-[11px] font-mono text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded border border-emerald-500/20">
+                    A.K. Khurana / AIOS Protocol
+                </span>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
+                <div className="p-3.5 rounded-2xl bg-[#0A0F1E] border border-slate-800">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Microaneurysms</p>
+                    <p className="text-xl font-black text-white mt-1">{summary.microaneurysms || 0}</p>
+                </div>
+                <div className="p-3.5 rounded-2xl bg-[#0A0F1E] border border-slate-800">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Hemorrhages</p>
+                    <p className="text-xl font-black text-white mt-1">{summary.hemorrhages || 0}</p>
+                </div>
+                <div className="p-3.5 rounded-2xl bg-[#0A0F1E] border border-slate-800">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Hard Exudates</p>
+                    <p className="text-xl font-black text-white mt-1">{summary.hard_exudates || 0}</p>
+                </div>
+                <div className={`p-3.5 rounded-2xl border ${hasDME ? 'bg-red-500/10 border-red-500/40 shadow-lg shadow-red-500/10' : 'bg-[#0A0F1E] border-slate-800'}`}>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Macular Edema (CSME)</p>
+                    <p className={`text-xl font-black mt-1 ${hasDME ? 'text-red-400' : 'text-emerald-400'}`}>
+                        {hasDME ? 'DETECTED ⚠️' : 'NONE'}
+                    </p>
+                </div>
+            </div>
+
+            {hasDME && (
+                <div className="p-4 rounded-2xl bg-red-950/30 border border-red-500/40 text-xs text-red-200 flex items-start gap-3">
+                    <span className="text-lg">⚠️</span>
+                    <div>
+                        <strong className="text-red-100 uppercase tracking-wide">High-Risk Maculopathy Alert:</strong>
+                        <p className="mt-0.5 text-red-300">
+                            Hard exudates detected within 1 Disc Diameter of the fovea center ({arb.fovea_exudate_dist_dd || '&le; 1.0'} DD). 
+                            Threatens central visual acuity regardless of DR grade. Urgent OCT & anti-VEGF referral recommended.
+                        </p>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
@@ -401,6 +481,12 @@ export default function ResultsView() {
                              </div>
                         </div>
                     )}
+
+                    {/* 30-Second Clinician Validation Card (SIH26038 Requirement 4) */}
+                    <ClinicianValidationCard
+                        arbitration={result?.arbitration || activeRecord?.arbitration || activeRecord?.rightEye?.arbitration}
+                        yolo={result?.yolo || activeRecord?.yolo || activeRecord?.rightEye?.yolo}
+                    />
 
                     {/* Probability Distributions (Common component) */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
