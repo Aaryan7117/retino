@@ -96,7 +96,7 @@ try:
             print(f"  ✓ Scale Analysis: At {iw}x{ih}, a 50μm microaneurysm occupies ~18-25 pixels.")
             print(f"    - In 224x224 (B0): Compressed to ~1.0 pixel (High risk of loss!)")
             print(f"    - In 300x300 (B3): Preserved at ~2.5 pixels (Sufficient for convolutional feature capture)")
-            print(f"    - In 1024x1024 (YOLO26n STAL): Preserved at ~5.5 pixels (Optimal for bounding box detection)")
+            print(f"    - In 1024x1024 (YOLOv8): Preserved at ~5.5 pixels (Optimal for bounding box detection)")
 except Exception as e:
     print(f"  ⚠️ IDRiD inspection note: {e}")
 
