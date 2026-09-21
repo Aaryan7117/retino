@@ -74,40 +74,10 @@ async function analyzeViaBackend(imageFile, onProgress) {
         } else if (backendGrade === 0 && (totalMA > 0 || totalHM > 0 || totalEX > 0)) {
             if (totalHM > 0 || totalEX > 0) {
                 backendGrade = 2;
-                clinicalRuleApplied = 'ICDR Rule: Hemorrhages/exudates detected in early scan (Moderate NPDR)';
+                clinicalRuleApplied = 'ICDR Lesion Upgrade: Hemorrhages/exudates detected in early scan (Moderate NPDR)';
             } else {
                 backendGrade = 1;
-                clinicalRuleApplied = 'ICDR Rule: Focal microaneurysms detected in early scan (Mild NPDR)';
-            }
-        } else if (backendGrade === 4 && totalHM === 0) {
-            if (totalEX > 0) {
-                backendGrade = 2;
-                clinicalRuleApplied = 'ICDR Safety Gate: Zero hemorrhages; hard exudates indicate Moderate NPDR (Grade 2)';
-            } else if (totalMA > 0) {
-                backendGrade = 1;
-                clinicalRuleApplied = 'ICDR Safety Gate: Zero hemorrhages; focal microaneurysms indicate Mild NPDR (Grade 1)';
-            } else {
-                backendGrade = 0;
-                clinicalRuleApplied = 'ICDR Safety Gate: Zero retinal lesions detected; overrode false Grade 4 to No DR (Grade 0)';
-            }
-        } else if (backendGrade === 3 && totalHM === 0) {
-            if (totalEX > 0) {
-                backendGrade = 2;
-                clinicalRuleApplied = 'ICDR Safety Gate: Zero hemorrhages; hard exudates indicate Moderate NPDR (Grade 2)';
-            } else if (totalMA > 0) {
-                backendGrade = 1;
-                clinicalRuleApplied = 'ICDR Safety Gate: No retinal hemorrhages; focal microaneurysms indicate Mild NPDR (Grade 1)';
-            } else {
-                backendGrade = 0;
-                clinicalRuleApplied = 'ICDR Safety Gate: Zero retinal lesions detected; overrode false Grade 3 to No DR (Grade 0)';
-            }
-        } else if (backendGrade === 2 && totalHM === 0 && totalEX === 0) {
-            if (totalMA > 0) {
-                backendGrade = 1;
-                clinicalRuleApplied = 'ICDR Safety Gate: Microaneurysms only (no hemorrhages/exudates); classified as Mild NPDR (Grade 1)';
-            } else {
-                backendGrade = 0;
-                clinicalRuleApplied = 'ICDR Safety Gate: No retinal lesions detected; overrode false Grade 2 to No DR (Grade 0)';
+                clinicalRuleApplied = 'ICDR Lesion Upgrade: Focal microaneurysms detected in early scan (Mild NPDR)';
             }
         }
 
