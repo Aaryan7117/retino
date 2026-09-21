@@ -151,14 +151,12 @@ export const preprocessImageForONNX = (imageElement) => {
     preprocessingCanvas.height = TARGET_SIZE;
     const preprocessingCtx = preprocessingCanvas.getContext('2d');
 
-    // Calculate crop dimensions to maintain aspect ratio (Center Crop)
-    const scaleFactor = Math.max(TARGET_SIZE / imageElement.width, TARGET_SIZE / imageElement.height);
-    const scaledWidth = imageElement.width * scaleFactor;
-    const scaledHeight = imageElement.height * scaleFactor;
-    const offsetX = (TARGET_SIZE - scaledWidth) / 2;
-    const offsetY = (TARGET_SIZE - scaledHeight) / 2;
-
-    preprocessingCtx.drawImage(imageElement, offsetX, offsetY, scaledWidth, scaledHeight);
+    // Fundus photographs contain a full circular retina.
+    // Resize the full field of view directly to 224x224 (matching PyTorch/OpenCV training and FastAPI backend)
+    // without center-cropping the peripheral nasal/temporal pathology (such as neovascularization).
+    preprocessingCtx.imageSmoothingEnabled = true;
+    preprocessingCtx.imageSmoothingQuality = 'high';
+    preprocessingCtx.drawImage(imageElement, 0, 0, TARGET_SIZE, TARGET_SIZE);
 
     const imageData = preprocessingCtx.getImageData(0, 0, TARGET_SIZE, TARGET_SIZE);
     const pixelData = imageData.data;
