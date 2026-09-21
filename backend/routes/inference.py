@@ -259,18 +259,20 @@ def clinical_arbitration_engine(
                     min_fovea_dist_dd = dist_dd
 
     # Khurana p. 262: CSME defined as hard exudates within 1 Disc Diameter of fovea
-    has_macular_edema = (total_ex > 0) and (min_fovea_dist_dd <= 1.0)
+    has_macular_edema = bool((total_ex > 0) and (min_fovea_dist_dd <= 1.0))
     
-    # ETDRS 4-2-1 Rule: >20 hemorrhages in all 4 quadrants
+    # ETDRS 4-2-1 Rule: >=20 hemorrhages in all 4 quadrants (or >=80 total hemorrhages)
     etdrs_4_2_1_met = all(count >= 20 for count in quadrant_counts.values()) if detections else False
+    if total_hm >= 80:
+        etdrs_4_2_1_met = True
 
-    final_grade = nn_grade
+    final_grade = int(nn_grade)
     rule_applied = "ICDR Softmax Consensus"
 
     # Clinical Safety Gates (A.K. Khurana / ICDR standards)
     if etdrs_4_2_1_met and final_grade < 3:
         final_grade = 3
-        rule_applied = "ETDRS 4-2-1 Rule Applied: ≥20 hemorrhages across all 4 quadrants (Severe NPDR)"
+        rule_applied = "ETDRS 4-2-1 Rule Applied: Severe intraretinal hemorrhages across 4 quadrants (Severe NPDR)"
     elif nn_grade == 0 and (total_ma > 0 or total_hm > 0 or total_ex > 0):
         if total_hm > 0 or total_ex > 0:
             final_grade = 2
@@ -278,34 +280,47 @@ def clinical_arbitration_engine(
         else:
             final_grade = 1
             rule_applied = "ICDR Microaneurysm Rule: Focal microaneurysms detected in early scan (Mild NPDR)"
-    elif nn_grade == 4 and total_hm == 0 and total_ex == 0:
-        if total_ma > 0:
+    elif nn_grade == 4 and total_hm == 0:
+        if total_ex > 0:
+            final_grade = 2
+            rule_applied = "ICDR Safety Gate: Zero hemorrhages; hard exudates indicate Moderate NPDR (Grade 2)"
+        elif total_ma > 0:
             final_grade = 1
-            rule_applied = "ICDR Safety Gate: Zero hemorrhages or neovascularization; focal microaneurysms indicate Mild NPDR (Grade 1)"
+            rule_applied = "ICDR Safety Gate: Zero hemorrhages; focal microaneurysms indicate Mild NPDR (Grade 1)"
         else:
             final_grade = 0
             rule_applied = "ICDR Safety Gate: Zero retinal lesions detected; overrode false Grade 4 to No DR (Grade 0)"
-    elif nn_grade == 3 and total_hm == 0 and total_ex == 0:
-        if total_ma > 0:
+    elif nn_grade == 3 and total_hm == 0:
+        if total_ex > 0:
+            final_grade = 2
+            rule_applied = "ICDR Safety Gate: Zero hemorrhages; hard exudates indicate Moderate NPDR (Grade 2)"
+        elif total_ma > 0:
             final_grade = 1
             rule_applied = "ICDR Safety Gate: No retinal hemorrhages; focal microaneurysms indicate Mild NPDR (Grade 1)"
         else:
             final_grade = 0
             rule_applied = "ICDR Safety Gate: Zero retinal lesions detected; overrode false Grade 3 to No DR (Grade 0)"
+    elif nn_grade == 2 and total_hm == 0 and total_ex == 0:
+        if total_ma > 0:
+            final_grade = 1
+            rule_applied = "ICDR Safety Gate: Microaneurysms only (no hemorrhages/exudates); classified as Mild NPDR (Grade 1)"
+        else:
+            final_grade = 0
+            rule_applied = "ICDR Safety Gate: No retinal lesions detected; overrode false Grade 2 to No DR (Grade 0)"
 
-    is_referable = (final_grade >= 2) or has_macular_edema
+    is_referable = bool((final_grade >= 2) or has_macular_edema)
 
     return {
-        "final_grade": final_grade,
-        "is_referable": is_referable,
-        "has_macular_edema": has_macular_edema,
-        "fovea_exudate_dist_dd": round(min_fovea_dist_dd, 2) if total_ex > 0 else None,
-        "clinical_rule_applied": rule_applied,
+        "final_grade": int(final_grade),
+        "is_referable": bool(is_referable),
+        "has_macular_edema": bool(has_macular_edema),
+        "fovea_exudate_dist_dd": float(round(min_fovea_dist_dd, 2)) if total_ex > 0 else None,
+        "clinical_rule_applied": str(rule_applied),
         "lesion_summary": {
-            "microaneurysms": total_ma,
-            "hemorrhages": total_hm,
-            "hard_exudates": total_ex,
-            "quadrant_distribution": quadrant_counts
+            "microaneurysms": int(total_ma),
+            "hemorrhages": int(total_hm),
+            "hard_exudates": int(total_ex),
+            "quadrant_distribution": {k: int(v) for k, v in quadrant_counts.items()}
         }
     }
 

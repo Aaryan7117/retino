@@ -37,7 +37,7 @@ export default function DoctorPortal() {
 
     async function reload() {
         const all = await getAllPatients();
-        const flagged = all.filter(p => p.grade >= 2 || p.risk === 'HIGH');
+        const flagged = all.filter(p => Number(p.grade ?? p.gradeOD ?? 0) >= 2 || (p.risk || p.risk_level) === 'HIGH');
         setPatients(flagged);
         const revs = await getAllReviews();
         const revMap = {};
@@ -52,8 +52,8 @@ export default function DoctorPortal() {
     }, []);
 
     const tabs = {
-        urgent: patients.filter(p => p.grade >= 3),
-        refer: patients.filter(p => p.grade === 2),
+        urgent: patients.filter(p => Number(p.grade ?? p.gradeOD ?? 0) >= 3),
+        refer: patients.filter(p => Number(p.grade ?? p.gradeOD ?? 0) === 2),
         all: patients,
     };
 
@@ -123,6 +123,8 @@ export default function DoctorPortal() {
                         const isReviewed = !!reviews[p.id];
                         const ov = overrides[p.id];
                         const noteVal = notes[p.id] || '';
+                        const patientGrade = Number(p.grade ?? p.gradeOD ?? 0);
+                        const diagnosisLabel = p.diagnosis || p.grade_label || GRADE_LABELS[patientGrade] || 'Diagnostic Assessment';
                         return (
                             <div key={p.id} className="card-elevated relative space-y-3">
                                 {/* Reviewed badge */}
@@ -139,10 +141,10 @@ export default function DoctorPortal() {
                                         <p className="text-slate-400 text-xs">{p.age}y · {p.gender} · <span className="font-mono">{p.id}</span></p>
                                         <p className="text-slate-500 text-xs">{timeAgo(p.timestamp)}</p>
                                     </div>
-                                    <span className={`grade-pill grade-${p.grade}`}>Grade {p.grade}</span>
+                                    <span className={`grade-pill grade-${patientGrade}`}>Grade {patientGrade}</span>
                                 </div>
 
-                                <p className="text-slate-300 text-sm">{p.diagnosis}</p>
+                                <p className="text-slate-300 text-sm font-semibold">{diagnosisLabel}</p>
                                 <p className="text-xs text-slate-500">Confidence: <span className="text-white font-bold">{Math.round((p.confidence || 0) * 100)}%</span></p>
 
                                 {/* Retinal Images — 2 rows: originals then heatmaps */}

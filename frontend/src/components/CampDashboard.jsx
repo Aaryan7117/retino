@@ -370,13 +370,13 @@ export default function CampDashboard() {
 
     const { mode } = useScreeningMode();
 
-    const highRiskCount = patientRecords.filter(p => p.risk === 'HIGH').length;
-    const moderateRiskCount = patientRecords.filter(p => p.risk === 'MEDIUM').length;
+    const highRiskCount = patientRecords.filter(p => (p.risk || p.risk_level) === 'HIGH').length;
+    const moderateRiskCount = patientRecords.filter(p => (p.risk || p.risk_level) === 'MEDIUM').length;
     const totalReferralsNeeded = patientRecords.filter(p => shouldRefer(p, mode)).length;
     const currentSessionDate = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
     const visiblePatientQueue = useMemo(() => {
-        let queue = [...patientRecords].sort((a, b) => b.timestamp - a.timestamp);
+        let queue = [...patientRecords].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
         if (searchQueryString.trim()) {
             const lowerQuery = searchQueryString.toLowerCase();
             queue = queue.filter(p =>
@@ -386,14 +386,14 @@ export default function CampDashboard() {
             );
         }
         if (activeGradeFilter === 'high') {
-            queue = queue.filter(p => p.risk === 'HIGH');
+            queue = queue.filter(p => (p.risk || p.risk_level) === 'HIGH');
         } else if (activeGradeFilter === 'refer') {
             queue = queue.filter(p => shouldRefer(p, mode));
         } else if (activeGradeFilter !== 'all') {
-            queue = queue.filter(p => p.grade === Number(activeGradeFilter));
+            queue = queue.filter(p => Number(p.grade ?? p.gradeOD ?? 0) === Number(activeGradeFilter));
         }
         return queue;
-    }, [patientRecords, searchQueryString, activeGradeFilter]);
+    }, [patientRecords, searchQueryString, activeGradeFilter, mode]);
 
     const totalPages = Math.ceil(visiblePatientQueue.length / ITEMS_PER_PAGE) || 1;
     const paginatedPatients = useMemo(() => {
