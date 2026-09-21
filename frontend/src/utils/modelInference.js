@@ -65,12 +65,12 @@ async function analyzeViaBackend(imageFile, onProgress) {
         });
 
         const hasMacularEdema = totalEX > 0 && minFoveaDistDD <= 1.0;
-        const etdrs421Met = Object.values(quadrantCounts).every(c => c >= 20);
+        const etdrs421Met = Object.values(quadrantCounts).every(c => c >= 20) || totalHM >= 80;
         let clinicalRuleApplied = 'ICDR Softmax Consensus';
         let backendGrade = responseData.grade ?? 0;
         if (etdrs421Met && backendGrade < 3) {
             backendGrade = 3;
-            clinicalRuleApplied = 'ETDRS 4-2-1 Rule: ≥20 hemorrhages in all 4 quadrants (Severe NPDR)';
+            clinicalRuleApplied = 'ETDRS 4-2-1 Rule: Severe intraretinal hemorrhages across quadrants (Severe NPDR)';
         } else if (backendGrade === 0 && (totalMA > 0 || totalHM > 0 || totalEX > 0)) {
             if (totalHM > 0 || totalEX > 0) {
                 backendGrade = 2;
@@ -79,21 +79,35 @@ async function analyzeViaBackend(imageFile, onProgress) {
                 backendGrade = 1;
                 clinicalRuleApplied = 'ICDR Rule: Focal microaneurysms detected in early scan (Mild NPDR)';
             }
-        } else if (backendGrade === 4 && totalHM === 0 && totalEX === 0) {
-            if (totalMA > 0) {
+        } else if (backendGrade === 4 && totalHM === 0) {
+            if (totalEX > 0) {
+                backendGrade = 2;
+                clinicalRuleApplied = 'ICDR Safety Gate: Zero hemorrhages; hard exudates indicate Moderate NPDR (Grade 2)';
+            } else if (totalMA > 0) {
                 backendGrade = 1;
-                clinicalRuleApplied = 'ICDR Safety Gate: Zero hemorrhages or neovascularization; focal microaneurysms indicate Mild NPDR (Grade 1)';
+                clinicalRuleApplied = 'ICDR Safety Gate: Zero hemorrhages; focal microaneurysms indicate Mild NPDR (Grade 1)';
             } else {
                 backendGrade = 0;
                 clinicalRuleApplied = 'ICDR Safety Gate: Zero retinal lesions detected; overrode false Grade 4 to No DR (Grade 0)';
             }
-        } else if (backendGrade === 3 && totalHM === 0 && totalEX === 0) {
-            if (totalMA > 0) {
+        } else if (backendGrade === 3 && totalHM === 0) {
+            if (totalEX > 0) {
+                backendGrade = 2;
+                clinicalRuleApplied = 'ICDR Safety Gate: Zero hemorrhages; hard exudates indicate Moderate NPDR (Grade 2)';
+            } else if (totalMA > 0) {
                 backendGrade = 1;
                 clinicalRuleApplied = 'ICDR Safety Gate: No retinal hemorrhages; focal microaneurysms indicate Mild NPDR (Grade 1)';
             } else {
                 backendGrade = 0;
                 clinicalRuleApplied = 'ICDR Safety Gate: Zero retinal lesions detected; overrode false Grade 3 to No DR (Grade 0)';
+            }
+        } else if (backendGrade === 2 && totalHM === 0 && totalEX === 0) {
+            if (totalMA > 0) {
+                backendGrade = 1;
+                clinicalRuleApplied = 'ICDR Safety Gate: Microaneurysms only (no hemorrhages/exudates); classified as Mild NPDR (Grade 1)';
+            } else {
+                backendGrade = 0;
+                clinicalRuleApplied = 'ICDR Safety Gate: No retinal lesions detected; overrode false Grade 2 to No DR (Grade 0)';
             }
         }
 
@@ -263,7 +277,9 @@ export const analyzeImage = async (imageFile, onProgress) => {
                             result.heatmap_url = URL.createObjectURL(heatmapBlob);
                             result.heatmapBlob = heatmapBlob;
                             result.source = 'offline';
-                            result.risk_level = result.risk_level || result.risk || 'LOW'; // Standardize
+                            result.risk_level = result.risk_level || result.risk || (result.grade >= 3 ? 'HIGH' : result.grade >= 2 ? 'MEDIUM' : 'LOW');
+                            result.risk = result.risk_level;
+                            result.diagnosis = result.diagnosis || result.grade_label || 'Diagnostic evaluation complete';
                             inferenceWorker.terminate();
                             resolve(result);
                         } else if (type === 'ERROR') {

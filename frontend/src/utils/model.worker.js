@@ -489,11 +489,11 @@ self.onmessage = async (e) => {
 
         // Standardized clinical management timelines from A.K. Khurana (Comprehensive Ophthalmology p. 262)
         const MAP = [
-            { grade: 0, grade_label: 'No Diabetic Retinopathy', risk_level: 'LOW', risk_score: 10, urgency: 'Routine annual screening at PHC' },
-            { grade: 1, grade_label: 'Mild Diabetic Retinopathy', risk_level: 'LOW', risk_score: 28, urgency: 'Annual review; strict glycemic control' },
-            { grade: 2, grade_label: 'Moderate Diabetic Retinopathy', risk_level: 'MEDIUM', risk_score: 55, urgency: 'Referral to ophthalmologist within 6 months' },
-            { grade: 3, grade_label: 'Severe Diabetic Retinopathy', risk_level: 'HIGH', risk_score: 85, urgency: 'Urgent referral within 3 months (high risk of PDR)' },
-            { grade: 4, grade_label: 'Proliferative Diabetic Retinopathy', risk_level: 'HIGH', risk_score: 98, urgency: 'Emergency referral for PRP Laser / Anti-VEGF' }
+            { grade: 0, grade_label: 'No Diabetic Retinopathy', diagnosis: 'No Diabetic Retinopathy', risk_level: 'LOW', risk: 'LOW', risk_score: 10, urgency: 'Routine annual screening at PHC' },
+            { grade: 1, grade_label: 'Mild Diabetic Retinopathy', diagnosis: 'Mild Diabetic Retinopathy', risk_level: 'LOW', risk: 'LOW', risk_score: 28, urgency: 'Annual review; strict glycemic control' },
+            { grade: 2, grade_label: 'Moderate Diabetic Retinopathy', diagnosis: 'Moderate Diabetic Retinopathy', risk_level: 'MEDIUM', risk: 'MEDIUM', risk_score: 55, urgency: 'Referral to ophthalmologist within 6 months' },
+            { grade: 3, grade_label: 'Severe Diabetic Retinopathy', diagnosis: 'Severe Diabetic Retinopathy', risk_level: 'HIGH', risk: 'HIGH', risk_score: 85, urgency: 'Urgent referral within 3 months (high risk of PDR)' },
+            { grade: 4, grade_label: 'Proliferative Diabetic Retinopathy', diagnosis: 'Proliferative Diabetic Retinopathy', risk_level: 'HIGH', risk: 'HIGH', risk_score: 98, urgency: 'Emergency referral for PRP Laser / Anti-VEGF' }
         ];
         const gradeInfo = MAP[maxIdx] || MAP[2];
 
@@ -585,7 +585,7 @@ self.onmessage = async (e) => {
         });
 
         const hasMacularEdema = (totalEX > 0) && (minFoveaDistDD <= 1.0);
-        const etdrs421Met = Object.values(quadrantCounts).every(c => c >= 20);
+        const etdrs421Met = Object.values(quadrantCounts).every(c => c >= 20) || totalHM >= 80;
 
         let finalGrade = maxIdx;
         let clinicalRuleApplied = 'ICDR Softmax Consensus';
@@ -595,7 +595,7 @@ self.onmessage = async (e) => {
         // Rule 1: Severe NPDR 4-2-1 rule
         if (etdrs421Met && finalGrade < 3) {
             finalGrade = 3;
-            clinicalRuleApplied = 'ETDRS 4-2-1 Rule: ≥20 hemorrhages in all 4 quadrants (Severe NPDR)';
+            clinicalRuleApplied = 'ETDRS 4-2-1 Rule: Severe intraretinal hemorrhages across quadrants (Severe NPDR)';
             calibratedConfidence = Math.max(calibratedConfidence, 0.92);
         }
         // Rule 2: Early scan lesion upgrade
@@ -609,11 +609,14 @@ self.onmessage = async (e) => {
             }
             calibratedConfidence = Math.max(class_probabilities[finalGrade] ?? 0, 0.88);
         }
-        // Rule 3: Grade 4 false alarm safety gate (Proliferative DR strictly requires neovascularization or massive hemorrhages)
-        else if (maxIdx === 4 && totalHM === 0 && totalEX === 0) {
-            if (totalMA > 0) {
+        // Rule 3: Grade 4 false alarm safety gate (Proliferative DR strictly requires neovascularization or hemorrhages)
+        else if (maxIdx === 4 && totalHM === 0) {
+            if (totalEX > 0) {
+                finalGrade = 2;
+                clinicalRuleApplied = 'ICDR Safety Gate: Zero hemorrhages; hard exudates indicate Moderate NPDR (Grade 2)';
+            } else if (totalMA > 0) {
                 finalGrade = 1;
-                clinicalRuleApplied = 'ICDR Safety Gate: Zero hemorrhages or neovascularization; focal microaneurysms indicate Mild NPDR (Grade 1)';
+                clinicalRuleApplied = 'ICDR Safety Gate: Zero hemorrhages; focal microaneurysms indicate Mild NPDR (Grade 1)';
             } else {
                 finalGrade = 0;
                 clinicalRuleApplied = 'ICDR Safety Gate: Zero retinal lesions detected; overrode false Grade 4 to No DR (Grade 0)';
@@ -621,13 +624,27 @@ self.onmessage = async (e) => {
             calibratedConfidence = Math.max(class_probabilities[finalGrade] ?? 0, 0.88);
         }
         // Rule 4: Grade 3 false alarm safety gate
-        else if (maxIdx === 3 && totalHM === 0 && totalEX === 0) {
-            if (totalMA > 0) {
+        else if (maxIdx === 3 && totalHM === 0) {
+            if (totalEX > 0) {
+                finalGrade = 2;
+                clinicalRuleApplied = 'ICDR Safety Gate: Zero hemorrhages; hard exudates indicate Moderate NPDR (Grade 2)';
+            } else if (totalMA > 0) {
                 finalGrade = 1;
                 clinicalRuleApplied = 'ICDR Safety Gate: No retinal hemorrhages; focal microaneurysms indicate Mild NPDR (Grade 1)';
             } else {
                 finalGrade = 0;
                 clinicalRuleApplied = 'ICDR Safety Gate: Zero retinal lesions detected; overrode false Grade 3 to No DR (Grade 0)';
+            }
+            calibratedConfidence = Math.max(class_probabilities[finalGrade] ?? 0, 0.88);
+        }
+        // Rule 5: Grade 2 false alarm safety gate
+        else if (maxIdx === 2 && totalHM === 0 && totalEX === 0) {
+            if (totalMA > 0) {
+                finalGrade = 1;
+                clinicalRuleApplied = 'ICDR Safety Gate: Microaneurysms only (no hemorrhages/exudates); classified as Mild NPDR (Grade 1)';
+            } else {
+                finalGrade = 0;
+                clinicalRuleApplied = 'ICDR Safety Gate: No retinal lesions detected; overrode false Grade 2 to No DR (Grade 0)';
             }
             calibratedConfidence = Math.max(class_probabilities[finalGrade] ?? 0, 0.88);
         }

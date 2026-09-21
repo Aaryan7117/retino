@@ -23,7 +23,7 @@ const AUDIT_LOG_STORE = "audit_log";
  * @returns {Promise<string>}
  */
 async function getDBName() {
-  const uid = localStorage.getItem('rs_uid') || 'anonymous';
+  const uid = localStorage.getItem('rs_uid') || sessionStorage.getItem('rs_offline_uid') || 'anonymous';
   return `RetinaScanDB_${uid}`;
 }
 
@@ -115,6 +115,14 @@ async function getDB() {
  */
 export async function savePatient(patientRecord) {
   const db = await getDB();
+  const uid = localStorage.getItem('rs_uid') || sessionStorage.getItem('rs_offline_uid') || 'anonymous';
+  if (!patientRecord.user_id) {
+    patientRecord.user_id = uid;
+  }
+  // Ensure risk, risk_level, and diagnosis are always normalized
+  const numericGrade = Number(patientRecord.grade ?? patientRecord.gradeOD ?? 0);
+  patientRecord.risk_level = patientRecord.risk_level || patientRecord.risk || (numericGrade >= 3 ? 'HIGH' : numericGrade >= 2 ? 'MEDIUM' : 'LOW');
+  patientRecord.risk = patientRecord.risk || patientRecord.risk_level;
 
   // Always save locally (offline-first)
   await db.put(PATIENTS_STORE, patientRecord);
@@ -287,7 +295,7 @@ export async function syncPatientsFromCloud() {
  */
 export async function getAllPatients() {
   const db = await getDB();
-  const uid = localStorage.getItem('rs_uid');
+  const uid = localStorage.getItem('rs_uid') || sessionStorage.getItem('rs_offline_uid');
   const patients = await db.getAll(PATIENTS_STORE);
   // Double-filter by user_id for extra safety (DB is already user-scoped)
   const filtered = uid ? patients.filter(p => !p.user_id || p.user_id === uid) : patients;

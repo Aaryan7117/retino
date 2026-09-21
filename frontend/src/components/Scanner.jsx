@@ -179,12 +179,14 @@ export default function Scanner() {
 
             const deriveRiskScore = (res) => {
                 if (!res) return 0;
+                if (res.risk_score !== undefined && res.risk_score !== null) return res.risk_score;
                 const probs = res.class_probabilities;
                 if (probs && probs.length === 5) {
                     const weights = [0, 25, 50, 75, 100];
-                    return probs.reduce((acc, p, i) => acc + (p * weights[i]), 0);
+                    return Math.round(probs.reduce((acc, p, i) => acc + (p * weights[i]), 0));
                 }
-                return res.grade * 22;
+                const GRADE_SCORES = [10, 28, 55, 85, 98];
+                return GRADE_SCORES[res.grade] ?? (res.grade * 22);
             };
 
             const rightRisk = deriveRiskScore(rightInferenceResult);
@@ -198,9 +200,10 @@ export default function Scanner() {
                 leftEye?.file  ? blobToBase64(leftEye.file)  : Promise.resolve(null),
             ]);
 
-            const overallGradeValue = leftInferenceResult
-                ? Math.max(rightInferenceResult.grade, leftInferenceResult.grade)
-                : rightInferenceResult.grade;
+            const primaryResult = (leftInferenceResult && leftInferenceResult.grade > rightInferenceResult.grade)
+                ? leftInferenceResult
+                : rightInferenceResult;
+            const overallGradeValue = primaryResult.grade;
 
             setProgressMsg('Generating Lesion Segmentation Overlays...');
             const rightFinalHeatmap = await generateCombinedHeatmap(
@@ -223,11 +226,11 @@ export default function Scanner() {
                 timestamp: now.toISOString(),
                 grade: overallGradeValue,
                 risk_score: overallRiskScore,
-                diagnosis: rightInferenceResult.diagnosis || rightInferenceResult.grade_label || '',
-                confidence: rightInferenceResult.confidence,
+                diagnosis: primaryResult.diagnosis || primaryResult.grade_label || 'Diagnostic evaluation complete',
+                confidence: primaryResult.confidence,
                 risk: overallGradeValue >= 3 ? 'HIGH' : overallGradeValue >= 2 ? 'MEDIUM' : 'LOW',
                 risk_level: overallGradeValue >= 3 ? 'HIGH' : overallGradeValue >= 2 ? 'MEDIUM' : 'LOW',
-                urgency: rightInferenceResult.urgency,
+                urgency: primaryResult.urgency,
                 rightEye: {
                     grade: rightInferenceResult.grade,
                     grade_label: rightInferenceResult.grade_label,

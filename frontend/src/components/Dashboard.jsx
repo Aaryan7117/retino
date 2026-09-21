@@ -3,11 +3,10 @@ import { Link } from 'react-router-dom';
 import { getAllPatients, getQueuedRequests } from '../utils/indexedDB';
 
 export default function Dashboard() {
+    const [allPatients, setAllPatients] = useState([]);
     const [todayPatients, setTodayPatients] = useState([]);
     const [dashboardDate, setDashboardDate] = useState("");
     const [pendingCount, setPendingCount] = useState(0);
-
-    const todayStr = new Date().toISOString().slice(0, 10);
 
     function formatDashboardDate() {
         return new Date().toLocaleDateString('en-GB', {
@@ -20,11 +19,16 @@ export default function Dashboard() {
 
     async function loadPatients() {
         try {
-            const all = await getAllPatients();
-            const today = (all || []).filter((p) => {
+            const all = (await getAllPatients()) || [];
+            setAllPatients(all);
+            const now = new Date();
+            const todayUtc = now.toISOString().slice(0, 10);
+            const todayLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+            const today = all.filter((p) => {
                 if (!p.timestamp) return false;
-                const tsString = String(p.timestamp);
-                return tsString.slice(0, 10) === todayStr;
+                const pDate = String(p.timestamp).slice(0, 10);
+                return pDate === todayUtc || pDate === todayLocal;
             });
             setTodayPatients(today);
         } catch (err) {
@@ -46,9 +50,10 @@ export default function Dashboard() {
         return () => clearInterval(id);
     }, []);
 
-    const todayScans = todayPatients.length;
-    const highRisk = todayPatients.filter((p) => (p.risk_level || p.risk) === 'HIGH').length;
-    const referrals = todayPatients.filter((p) => {
+    const activeList = todayPatients.length > 0 ? todayPatients : allPatients;
+    const scanCount = todayPatients.length > 0 ? todayPatients.length : allPatients.length;
+    const highRisk = activeList.filter((p) => (p.risk_level || p.risk) === 'HIGH').length;
+    const referrals = activeList.filter((p) => {
         const r = p.risk_level || p.risk;
         return r === 'HIGH' || r === 'MEDIUM';
     }).length;
@@ -91,8 +96,10 @@ export default function Dashboard() {
                     {/* Quick Stats Reveal */}
                     <div className="grid grid-cols-2 gap-4 w-full md:w-auto shrink-0">
                         <div className="bg-[#111827]/60 backdrop-blur-md border border-[#1F2937] p-6 rounded-3xl flex flex-col items-center text-center gap-1 shadow-xl">
-                            <span className="text-3xl font-black text-white">{todayScans}</span>
-                            <span className="text-[10px] font-black text-violet-500 uppercase tracking-widest leading-none">Scans Today</span>
+                            <span className="text-3xl font-black text-white">{scanCount}</span>
+                            <span className="text-[10px] font-black text-violet-500 uppercase tracking-widest leading-none">
+                                {todayPatients.length > 0 ? "Scans Today" : "Total Scans"}
+                            </span>
                         </div>
                         <div className="bg-[#111827]/60 backdrop-blur-md border border-[#1F2937] p-6 rounded-3xl flex flex-col items-center text-center gap-1 shadow-xl">
                             <span className="text-3xl font-black text-rose-500">{referrals}</span>
@@ -122,8 +129,8 @@ export default function Dashboard() {
             {/* STATS OVERVIEW */}
             <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                 {[
-                    { label: 'Total Patients', value: todayScans, icon: <svg className="w-6 h-6 text-violet-500 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg> },
-                    { label: 'AI Verifications', value: todayScans, icon: <svg className="w-6 h-6 text-blue-500 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg> },
+                    { label: todayPatients.length > 0 ? 'Today Patients' : 'Total Patients', value: scanCount, icon: <svg className="w-6 h-6 text-violet-500 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg> },
+                    { label: 'AI Verifications', value: scanCount, icon: <svg className="w-6 h-6 text-blue-500 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg> },
                     { label: 'High Risk cases', value: highRisk, icon: <svg className="w-6 h-6 text-rose-500 animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg> },
                     { label: 'System Uptime', value: '99.8%', icon: <svg className="w-6 h-6 text-amber-500 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg> },
                 ].map((stat, i) => (
@@ -147,55 +154,70 @@ export default function Dashboard() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {todayPatients.length === 0 ? (
-                        <div className="col-span-full py-20 bg-[#111827] border border-[#1F2937] border-dashed rounded-[32px] flex flex-col items-center justify-center text-slate-500">
-                            <div className="w-16 h-16 rounded-full bg-[#0A0F1E] flex items-center justify-center mb-4 text-2xl opacity-40">📊</div>
-                            <p className="font-bold uppercase tracking-widest text-xs">No active cases in queue for {dashboardDate}</p>
-                        </div>
-                    ) : (
-                        todayPatients.slice(0, 6).map(patient => (
-                            <div key={patient.id} className="bg-[#111827] border border-[#1F2937] p-6 rounded-3xl hover:border-violet-500/30 transition-all group relative overflow-hidden">
-                                <div className="absolute top-0 right-0 w-24 h-24 bg-violet-600/5 rounded-full -mr-12 -mt-12 blur-2xl"></div>
-                                <div className="flex items-center justify-between mb-4 relative z-10">
-                                    <div className="w-10 h-10 rounded-xl bg-violet-900/20 text-violet-400 flex items-center justify-center font-black text-sm group-hover:bg-violet-600 group-hover:text-white transition-all">
-                                        {patient.name?.[0] || '?'}
+                    {(() => {
+                        const displayPatients = todayPatients.length > 0 ? todayPatients.slice(0, 6) : allPatients.slice(0, 6);
+                        if (displayPatients.length === 0) {
+                            return (
+                                <div className="col-span-full py-20 bg-[#111827] border border-[#1F2937] border-dashed rounded-[32px] flex flex-col items-center justify-center text-slate-500">
+                                    <div className="w-16 h-16 rounded-full bg-[#0A0F1E] flex items-center justify-center mb-4 text-2xl opacity-40">📊</div>
+                                    <p className="font-bold uppercase tracking-widest text-xs">No active cases in queue for {dashboardDate}</p>
+                                </div>
+                            );
+                        }
+
+                        const CLINICAL_NAMES = ['No DR', 'Mild DR', 'Moderate DR', 'Severe DR', 'Proliferative DR'];
+                        return displayPatients.map(patient => {
+                            const gradeVal = Number(patient.grade ?? patient.gradeOD ?? 0);
+                            const riskVal = patient.risk_level || patient.risk || (gradeVal >= 3 ? 'HIGH' : gradeVal >= 2 ? 'MEDIUM' : 'LOW');
+                            const diagnosisText = patient.diagnosis || patient.grade_label || CLINICAL_NAMES[gradeVal] || 'Diagnostic Review';
+
+                            return (
+                                <div key={patient.id} className="bg-[#111827] border border-[#1F2937] p-6 rounded-3xl hover:border-violet-500/30 transition-all group relative overflow-hidden">
+                                    <div className="absolute top-0 right-0 w-24 h-24 bg-violet-600/5 rounded-full -mr-12 -mt-12 blur-2xl"></div>
+                                    <div className="flex items-center justify-between mb-4 relative z-10">
+                                        <div className="w-10 h-10 rounded-xl bg-violet-900/20 text-violet-400 flex items-center justify-center font-black text-sm group-hover:bg-violet-600 group-hover:text-white transition-all">
+                                            {patient.name?.[0] || '?'}
+                                        </div>
+                                        <div className={`grade-pill grade-${gradeVal}`}>
+                                            Grade {gradeVal}
+                                        </div>
                                     </div>
-                                    <div className={`grade-pill grade-${patient.grade ?? patient.gradeOD ?? 0}`}>
-                                        Grade {patient.grade ?? patient.gradeOD ?? 0}
+                                    <div className="space-y-1 relative z-10">
+                                        <h4 className="text-white font-black truncate text-lg">{patient.name || 'Anonymous Patient'}</h4>
+                                        <p className="text-slate-400 text-xs font-semibold truncate">{diagnosisText}</p>
+                                        <div className="flex items-center gap-2 pt-1">
+                                            <span className={`px-2 py-0.5 rounded-lg border text-[9px] font-black uppercase tracking-wider ${
+                                                riskVal === 'HIGH' ? 'bg-red-500/10 border-red-500/20 text-red-500' :
+                                                riskVal === 'MEDIUM' ? 'bg-amber-500/10 border-amber-500/20 text-amber-500' :
+                                                'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                                            }`}>
+                                                {riskVal} RISK
+                                            </span>
+                                            {patient.confidence !== undefined && (
+                                                <span className="text-slate-500 text-[10px] font-bold">
+                                                    {Math.round((patient.confidence || 0) * 100)}% Conf
+                                                </span>
+                                            )}
+                                        </div>
+                                        <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest pt-1">
+                                            ID: {patient.id?.slice(0, 8) || 'Unknown'} • {(() => {
+                                                try {
+                                                    return patient.timestamp ? new Date(patient.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'No Time';
+                                                } catch (e) {
+                                                    return 'Invalid Time';
+                                                }
+                                            })()}
+                                        </p>
+                                    </div>
+                                    <div className="mt-6 flex gap-2 relative z-10">
+                                        <Link to={`/results?id=${patient.id}`} className="flex-1 btn-secondary text-[10px] py-3.5 h-auto uppercase tracking-widest font-black">
+                                            Open Report
+                                        </Link>
                                     </div>
                                 </div>
-                                <div className="space-y-1 relative z-10">
-                                    <h4 className="text-white font-black truncate text-lg">{patient.name || 'Anonymous Patient'}</h4>
-                                    <span className={`px-2 py-0.5 rounded-lg border text-[9px] font-black uppercase tracking-wider ${
-                                        patient.risk_level === 'HIGH' ? 'bg-red-500/10 border-red-500/20 text-red-500' :
-                                        patient.risk_level === 'MEDIUM' ? 'bg-amber-500/10 border-amber-500/20 text-amber-500' :
-                                        'bg-emerald-500/10 border-emerald-500/20 text-emerald-500'
-                                    }`}>
-                                        {patient.risk_level || 'LOW'}
-                                    </span>
-                                    <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">
-                                        ID: {patient.id?.slice(0, 8) || 'Unknown'} • {(() => {
-                                            try {
-                                                return patient.timestamp ? new Date(patient.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'No Time';
-                                            } catch (e) {
-                                                return 'Invalid Time';
-                                            }
-                                        })()}
-                                    </p>
-                                </div>
-                                <div className="mt-6 flex gap-2 relative z-10">
-                                    <Link to={`/results?id=${patient.id}`} className="flex-1 btn-secondary text-[10px] py-3.5 h-auto uppercase tracking-widest font-black">
-                                        Open Report
-                                    </Link>
-                                    <button className="px-4 bg-[#0A0F1E] border border-[#1F2937] rounded-xl text-slate-400 hover:text-white transition-all">
-                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.482 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6a3 3 0 100-2.684m0 2.684l6.632-3.316" />
-                                        </svg>
-                                    </button>
-                                </div>
-                            </div>
-                        ))
-                    )}
+                            );
+                        });
+                    })()}
                 </div>
             </section>
         </div>
