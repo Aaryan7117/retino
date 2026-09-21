@@ -98,14 +98,14 @@ def run_lesion_detection(image_rgb: np.ndarray) -> list:
 
 # ─── Real EfficientNetB3 Grading ─────────────────────────────────────────────
 def run_grading(image_rgb: np.ndarray) -> dict:
-    """Run EfficientNetB3 ONNX inference with 300x300 microaneurysm resolution and return grade/confidence/probabilities."""
-    img = cv2.resize(image_rgb, (300, 300))
+    """Run EfficientNetB3 ONNX inference at 224x224 (matching trained input shape) and return grade/confidence/probabilities."""
+    img = cv2.resize(image_rgb, (224, 224))
     img = img[:, :, :3]
     mean = np.array([0.485, 0.456, 0.406])
     std  = np.array([0.229, 0.224, 0.225])
     tensor = ((img / 255.0) - mean) / std
     tensor = tensor.transpose(2, 0, 1).astype(np.float32)
-    tensor = np.expand_dims(tensor, 0)  # [1, 3, 300, 300]
+    tensor = np.expand_dims(tensor, 0)  # [1, 3, 224, 224]
 
     sess    = get_grading_session()
     outputs = sess.run(None, {'input': tensor})
@@ -365,11 +365,27 @@ async def run_inference(
     if arbitration['has_macular_edema']:
         urgency_text = "URGENT: Clinically Significant Macular Edema (CSME) detected within 1 DD of fovea. Immediate referral for OCT & anti-VEGF injection."
 
-    # 7. Pack response
+    # 7. Pack response — update ALL fields to reflect the arbitrated grade
+    #    (Bug fix: previously, diagnosis/grade_label/risk_level were stale from the raw NN grade)
+    final_grade = arbitration['final_grade']
+    GRADE_MAP = [
+        {'grade_label': 'No Diabetic Retinopathy',           'risk_level': 'LOW',    'risk_score': 10, 'urgency_default': 'Routine annual screening at PHC'},
+        {'grade_label': 'Mild Diabetic Retinopathy',          'risk_level': 'LOW',    'risk_score': 28, 'urgency_default': 'Annual review; tight glycemic control (HbA1c < 7%)'},
+        {'grade_label': 'Moderate Diabetic Retinopathy',      'risk_level': 'MEDIUM', 'risk_score': 55, 'urgency_default': 'Referral to ophthalmologist within 6 months'},
+        {'grade_label': 'Severe Diabetic Retinopathy',        'risk_level': 'HIGH',   'risk_score': 85, 'urgency_default': 'Specialist referral within 3 months (high risk of PDR)'},
+        {'grade_label': 'Proliferative Diabetic Retinopathy', 'risk_level': 'HIGH',   'risk_score': 98, 'urgency_default': 'Emergency tertiary referral for PRP Laser / Anti-VEGF'},
+    ]
+    arb_info = GRADE_MAP[final_grade] if 0 <= final_grade <= 4 else GRADE_MAP[0]
+
     response = {
         **result,
-        "grade": arbitration['final_grade'],
-        "urgency": urgency_text,
+        "grade": final_grade,
+        "diagnosis": arb_info['grade_label'],
+        "grade_label": arb_info['grade_label'],
+        "risk_level": arb_info['risk_level'],
+        "risk_score": arb_info['risk_score'],
+        "risk": arb_info['risk_level'],
+        "urgency": urgency_text if arbitration.get('has_macular_edema') else arb_info['urgency_default'],
         "is_referable": arbitration['is_referable'],
         "arbitration": arbitration,
         "yolo": {
@@ -380,7 +396,7 @@ async def run_inference(
         "heatmap_url": heatmap_b64,
         "timestamp": datetime.now().isoformat(),
         "quality_warnings": quality_warnings,
-        "_note": 'RetinaScan AI — Validated INT8 ONNX + Khurana Clinical Engine',
+        "_note": 'RetinaScan AI — Validated ONNX + Khurana Clinical Engine',
     }
 
     return response

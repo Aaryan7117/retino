@@ -111,6 +111,27 @@ async function analyzeViaBackend(imageFile, onProgress) {
             },
         };
 
+        // Bug 3 fix: Propagate re-arbitrated grade into top-level result fields
+        // so Scanner.jsx picks up the correct grade for patientRecord and Dashboard display.
+        const GRADE_MAP = [
+            { grade_label: 'No Diabetic Retinopathy',        risk_level: 'LOW',    risk_score: 10, urgency: 'Routine annual screening at PHC' },
+            { grade_label: 'Mild Diabetic Retinopathy',       risk_level: 'LOW',    risk_score: 28, urgency: 'Annual review; strict glycemic control' },
+            { grade_label: 'Moderate Diabetic Retinopathy',   risk_level: 'MEDIUM', risk_score: 55, urgency: 'Referral to ophthalmologist within 6 months' },
+            { grade_label: 'Severe Diabetic Retinopathy',     risk_level: 'HIGH',   risk_score: 85, urgency: 'Urgent referral within 3 months (high risk of PDR)' },
+            { grade_label: 'Proliferative Diabetic Retinopathy', risk_level: 'HIGH', risk_score: 98, urgency: 'Emergency referral for PRP Laser / Anti-VEGF' },
+        ];
+        const arbInfo = GRADE_MAP[backendGrade] || GRADE_MAP[0];
+        baseResult.grade       = backendGrade;
+        baseResult.diagnosis   = arbInfo.grade_label;
+        baseResult.grade_label = arbInfo.grade_label;
+        baseResult.risk_level  = arbInfo.risk_level;
+        baseResult.risk        = arbInfo.risk_level;
+        baseResult.risk_score  = arbInfo.risk_score;
+        baseResult.urgency     = hasMacularEdema
+            ? 'URGENT: Clinically Significant Macular Edema (CSME) detected within 1 DD of fovea. Immediate referral for OCT & anti-VEGF injection.'
+            : arbInfo.urgency;
+
+
         onProgress('Lesion mapping complete ✅');
     } catch (yoloErr) {
         console.warn('[YOLO local] Failed, continuing without detections:', yoloErr.message);
